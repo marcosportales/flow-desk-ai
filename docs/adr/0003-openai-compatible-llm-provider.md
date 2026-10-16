@@ -1,0 +1,3 @@
+# OpenAI-compatible LLM provider behind a Classifier interface
+
+Classification calls an OpenAI-compatible chat completions API whose base URL, key and model come from environment variables (the author's available provider is OpenAI-compatible; no Anthropic credits). Model output is never trusted for its shape: it is always validated against the Classification schema, whatever structured-output features the provider offers. A deterministic fake Classifier, selected by environment variable, serves tests and key-less local runs, and can be told to produce valid output, invalid output or a timeout.
