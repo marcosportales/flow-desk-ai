@@ -1,0 +1,3 @@
+# Reconcile before retry; the worker is the only retry owner
+
+Each Dispatch carries a stable id used as an idempotency key end to end (app → n8n → target service), and every retry reuses it. A Dispatch with no callback within a time window becomes Unknown and is reconciled against the target service before it may be retried; manual retry is offered only for failed Dispatches. Retries happen only in the app's worker, never inside n8n, so retries cannot multiply across layers. This depends on the target being able to answer "did you receive this id?", which the simulated service does and real targets would need to as well.
