@@ -38,6 +38,7 @@ function settle(
     case "ok":
     case "queued":
       revalidatePath(`/tickets/${ticketId}`);
+      revalidatePath("/tickets");
       return { status: "ok", message: success };
     case "invalid": {
       const { fieldErrors, formErrors } = result.details as {
