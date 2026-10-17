@@ -3,7 +3,12 @@ import { writeFile } from "node:fs/promises";
 import { classifierFromEnv } from "@/infra/classifier";
 import { getDb, getSql } from "@/infra/db/client";
 import { classifyTicket } from "@/services/classifyTicket";
-import { type Handlers, runNextJob } from "./runner";
+import {
+  exponentialBackoffMs,
+  type Handlers,
+  type JobKind,
+  runNextJob,
+} from "./runner";
 
 const IDLE_MS = 1000;
 const TICK_MS = 10_000;
@@ -20,9 +25,11 @@ const handlers: Handlers = {
   classify: (job) => classifyTicket(db, classifier, job),
 };
 
-// Provider-error retries: 2s, 8s, 30s (IMPLEMENTATION.md §2.5).
-const backoffMs = (attempts: number) =>
-  [2_000, 8_000, 30_000][attempts - 1] ?? 30_000;
+// Classify retries after a provider error: 2s, 8s, 30s (IMPLEMENTATION.md §2.5).
+const backoffMs = (attempts: number, kind: JobKind) =>
+  kind === "classify"
+    ? ([2_000, 8_000, 30_000][attempts - 1] ?? 30_000)
+    : exponentialBackoffMs(attempts);
 
 // Marks `sent` Dispatches past their callback deadline `unknown` and enqueues
 // a reconcile job; wired up with the Dispatch handlers.

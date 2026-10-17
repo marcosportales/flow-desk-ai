@@ -294,6 +294,25 @@ describe("classifyTicket", () => {
     expect(s.events.at(-1)).toMatchObject({ type: "sent_to_review" });
   });
 
+  it("leaves a Ticket alone when another worker classified it during a failing provider call", async () => {
+    const created = await newTicket(ERP_BLOCKER);
+    const racing: Classifier = {
+      provider: "racing",
+      model: "racing-1",
+      async classify() {
+        await classifyTicket(db, new FakeClassifier("valid"), job(created.id));
+        throw new ClassifierProviderError("too late");
+      },
+    };
+
+    await classifyTicket(db, racing, job(created.id, 3, 3));
+
+    const s = await snapshot(created.id);
+    expect(s.ticket.classificationState).toBe("classified");
+    expect(s.dispatches).toHaveLength(1);
+    expect(s.events.map((e) => e.type)).not.toContain("sent_to_review");
+  });
+
   it("does nothing for a Ticket that is already classified", async () => {
     const created = await newTicket(ERP_BLOCKER);
     await classifyTicket(db, new FakeClassifier("valid"), job(created.id));

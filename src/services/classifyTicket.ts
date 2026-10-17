@@ -118,16 +118,25 @@ export async function classifyTicket(
 
   if (outcome === "provider_error") {
     const error = providerError!;
-    await db.transaction(async (tx) => {
+    const lostRace = await db.transaction(async (tx) => {
+      const [locked] = await tx
+        .select()
+        .from(tickets)
+        .where(eq(tickets.id, ticket.id))
+        .for("update");
+      // Another worker finished this Ticket while the provider call ran.
+      if (locked!.classificationState === "classified") return true;
       await recordAttempts(tx, ticket.id, classifier, attempts);
       if (isFinalTry) {
         await sendToReview(
           tx,
-          ticket,
+          locked!,
           `AI unavailable after ${job.attempts} attempts: ${error.message}`,
         );
       }
+      return false;
     });
+    if (lostRace) return;
     // Not final: the throw makes the worker retry with backoff.
     if (!isFinalTry) throw error;
     return;
@@ -291,11 +300,9 @@ async function applyClassification(
     actor: "system",
     data: { dispatchId: dispatch!.id, route, team },
   });
-  await tx
-    .insert(jobs)
-    .values({
-      kind: "dispatch",
-      ticketId: ticket.id,
-      dispatchId: dispatch!.id,
-    });
+  await tx.insert(jobs).values({
+    kind: "dispatch",
+    ticketId: ticket.id,
+    dispatchId: dispatch!.id,
+  });
 }

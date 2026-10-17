@@ -20,7 +20,7 @@ The worker classifies each Ticket with the Classifier chosen by `CLASSIFIER`:
 - `fake` (default): deterministic and key-less. `FAKE_CLASSIFIER_MODE` is `valid` (keyword rules for the example Requests), `invalid`, `timeout` or `provider_error`, to exercise the failure paths.
 - `openai_compatible`: any OpenAI-compatible chat completions API. Set `LLM_BASE_URL` (including `/v1`), `LLM_API_KEY` and `LLM_MODEL`. It asks for `json_schema`, falls back to `json_object`, then to plain JSON; the reply is always Zod-validated.
 
-Invalid output gets one repair call, then the Ticket goes to `needs_review`. Provider errors retry 3 times (2s, 8s, 30s), then `needs_review`. Neither creates a Dispatch.
+Invalid output gets one repair call, then the Ticket goes to `needs_review`. Provider errors get 3 attempts in total (waiting 2s, then 8s between them), then `needs_review`. Neither creates a Dispatch.
 
 ### Smoke test against the real provider
 
