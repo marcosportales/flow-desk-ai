@@ -1,5 +1,5 @@
 {
-  "id": "705dc406-2f62-4380-a0fc-a7e2baa83eef",
+  "id": "08993d29-df42-479e-a197-1f66d0b29666",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -979,7 +979,7 @@
         },
         "tickets_override_has_reason": {
           "name": "tickets_override_has_reason",
-          "value": "(\"tickets\".\"priority\" is distinct from \"tickets\".\"computed_priority\") = (\"tickets\".\"priority_override_reason\" is not null)"
+          "value": "(\"tickets\".\"priority\" is distinct from \"tickets\".\"computed_priority\") = (\"tickets\".\"priority_override_reason\" is not null)\n        and (\"tickets\".\"priority_override_reason\" is null or btrim(\"tickets\".\"priority_override_reason\") <> '')"
         }
       },
       "isRLSEnabled": false

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { inArray } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 import * as schema from "./schema";
 import {
@@ -52,7 +52,7 @@ const seedRequesters = [
   },
 ] satisfies (typeof requesters.$inferInsert)[];
 
-type Facts = Pick<
+type ClassificationFacts = Pick<
   typeof tickets.$inferInsert,
   "category" | "summary" | "blocksWork" | "impactScope" | "team"
 >;
@@ -66,13 +66,14 @@ type SeedTicket = {
   status?: Ticket["status"];
   // Classification outcomes in order; omitted means not yet attempted.
   attempts?: ("valid" | "invalid_output")[];
-  classification?: Facts & {
+  classification?: ClassificationFacts & {
     reason: string;
     computedPriority: NonNullable<Ticket["priority"]>;
     priorityRule: string;
   };
   override?: { priority: NonNullable<Ticket["priority"]>; reason: string };
-  dispatch?: { status: "succeeded" | "failed"; failedAttempts: number };
+  // "failed" means the automatic attempts ran out.
+  dispatch?: "succeeded" | "failed";
 };
 
 const seedTickets: SeedTicket[] = [
@@ -94,7 +95,7 @@ const seedTickets: SeedTicket[] = [
       computedPriority: "urgent",
       priorityRule: "erp_blocker",
     },
-    dispatch: { status: "succeeded", failedAttempts: 0 },
+    dispatch: "succeeded",
   },
   {
     key: "seed-vpn-new-hire",
@@ -115,7 +116,7 @@ const seedTickets: SeedTicket[] = [
       computedPriority: "low",
       priorityRule: "default",
     },
-    dispatch: { status: "succeeded", failedAttempts: 0 },
+    dispatch: "succeeded",
   },
   {
     key: "seed-sso-outage",
@@ -136,7 +137,7 @@ const seedTickets: SeedTicket[] = [
       computedPriority: "urgent",
       priorityRule: "org_wide_blocker",
     },
-    dispatch: { status: "succeeded", failedAttempts: 0 },
+    dispatch: "succeeded",
   },
   {
     key: "seed-sales-dashboard",
@@ -156,7 +157,7 @@ const seedTickets: SeedTicket[] = [
       computedPriority: "low",
       priorityRule: "default",
     },
-    dispatch: { status: "failed", failedAttempts: 3 },
+    dispatch: "failed",
   },
   {
     key: "seed-stock-report",
@@ -180,7 +181,7 @@ const seedTickets: SeedTicket[] = [
       priority: "high",
       reason: "Shipments for three warehouses depend on this report.",
     },
-    dispatch: { status: "succeeded", failedAttempts: 0 },
+    dispatch: "succeeded",
   },
   {
     key: "seed-inquiry-erp-ticket",
@@ -192,7 +193,7 @@ const seedTickets: SeedTicket[] = [
     attempts: ["valid"],
     classification: {
       category: "inquiry",
-      summary: "Follow-up on the ERP invoice posting ticket",
+      summary: "Asks for news on the ERP invoice posting ticket",
       blocksWork: false,
       impactScope: "individual",
       team: "service_desk",
@@ -229,7 +230,7 @@ function requestHash(requesterId: string, title: string, description: string) {
 export async function seedDatabase(db: Db) {
   await db.transaction(async (tx) => {
     await tx.insert(requesters).values(seedRequesters).onConflictDoNothing();
-    const people = await tx
+    const seeded = await tx
       .select({ id: requesters.id, email: requesters.email })
       .from(requesters)
       .where(
@@ -238,7 +239,7 @@ export async function seedDatabase(db: Db) {
           seedRequesters.map((r) => r.email),
         ),
       );
-    const requesterIds = new Map(people.map((p) => [p.email, p.id]));
+    const requesterIds = new Map(seeded.map((r) => [r.email, r.id]));
 
     for (const seed of seedTickets) {
       await seedTicket(tx, seed, requesterIds.get(seed.requester)!);
@@ -246,14 +247,18 @@ export async function seedDatabase(db: Db) {
   });
 }
 
+const DISPATCH_FAILED_ATTEMPTS = 3;
+const CALLBACK_TIMEOUT_MS = 60_000;
+
 async function seedTicket(db: Db, seed: SeedTicket, requesterId: string) {
   const createdAt = new Date(Date.now() - seed.hoursAgo * 3_600_000);
   // Each later event happens a minute after the previous one.
   let minute = 0;
   const at = () => new Date(createdAt.getTime() + minute++ * 60_000);
 
-  const c = seed.classification;
-  const classified = c && c.category !== "inquiry";
+  const classification = seed.classification;
+  const classified = classification && classification.category !== "inquiry";
+  const priority = seed.override?.priority ?? classification?.computedPriority;
   const [ticket] = await db
     .insert(tickets)
     .values({
@@ -266,16 +271,16 @@ async function seedTicket(db: Db, seed: SeedTicket, requesterId: string) {
         : seed.attempts
           ? "needs_review"
           : "pending",
-      ...(c && {
-        category: c.category,
-        summary: c.summary,
-        blocksWork: c.blocksWork,
-        impactScope: c.impactScope,
-        team: c.team,
+      ...(classification && {
+        category: classification.category,
+        summary: classification.summary,
+        blocksWork: classification.blocksWork,
+        impactScope: classification.impactScope,
+        team: classification.team,
         classificationSource: "ai" as const,
-        computedPriority: c.computedPriority,
-        priorityRule: c.priorityRule,
-        priority: seed.override?.priority ?? c.computedPriority,
+        computedPriority: classification.computedPriority,
+        priorityRule: classification.priorityRule,
+        priority,
         priorityOverrideReason: seed.override?.reason,
       }),
       idempotencyKey: seed.key,
@@ -303,6 +308,7 @@ async function seedTicket(db: Db, seed: SeedTicket, requesterId: string) {
   }
 
   for (const [i, outcome] of (seed.attempts ?? []).entries()) {
+    const valid = outcome === "valid";
     await db.insert(classificationAttempts).values({
       ticketId: ticket.id,
       attemptNo: i + 1,
@@ -310,94 +316,113 @@ async function seedTicket(db: Db, seed: SeedTicket, requesterId: string) {
       outcome,
       provider: "fake",
       model: "fake-classifier",
-      rawOutput:
-        outcome === "invalid_output"
-          ? "Sure! It sounds like a printer issue."
-          : null,
-      parsed:
-        outcome === "valid" && c
-          ? {
-              category: c.category,
-              summary: c.summary,
-              blocks_work: c.blocksWork,
-              impact_scope: c.impactScope,
-              reason: c.reason,
-            }
-          : null,
-      error: outcome === "invalid_output" ? "Output is not valid JSON" : null,
+      ...(valid && classification
+        ? {
+            parsed: {
+              category: classification.category,
+              summary: classification.summary,
+              blocks_work: classification.blocksWork,
+              impact_scope: classification.impactScope,
+              reason: classification.reason,
+            },
+          }
+        : {
+            rawOutput: "Sure! It sounds like a printer issue.",
+            error: "Output is not valid JSON",
+          }),
       latencyMs: 800 + i * 150,
       createdAt: at(),
     });
     event("classification_attempted", "ai", { attempt_no: i + 1, outcome });
   }
 
-  if (c && !classified) {
-    event("sent_to_review", "system", { reason: "inquiry" });
-  } else if (!c && seed.attempts) {
-    event("sent_to_review", "system", { reason: "invalid_output" });
-  }
-
-  if (classified) {
-    event("classified", "ai", { category: c.category, team: c.team });
+  if (classification) {
+    if (classified) {
+      event("classified", "ai", {
+        category: classification.category,
+        team: classification.team,
+      });
+    }
     event("priority_computed", "system", {
-      priority: c.computedPriority,
-      rule: c.priorityRule,
+      priority: classification.computedPriority,
+      rule: classification.priorityRule,
     });
     if (seed.override) {
       event("priority_overridden", "human", {
-        from: c.computedPriority,
+        from: classification.computedPriority,
         to: seed.override.priority,
         reason: seed.override.reason,
       });
     }
+    if (!classified) event("sent_to_review", "system", { reason: "inquiry" });
+  } else if (seed.attempts) {
+    event("sent_to_review", "system", { reason: "invalid_output" });
   }
 
-  if (classified && seed.dispatch) {
-    const effectivePriority = seed.override?.priority ?? c.computedPriority;
+  if (classified && seed.dispatch && priority) {
+    const succeeded = seed.dispatch === "succeeded";
+    const attemptCount = succeeded ? 1 : DISPATCH_FAILED_ATTEMPTS;
     const [dispatch] = await db
       .insert(dispatches)
       .values({
         ticketId: ticket.id,
         sequence: 1,
-        category: c.category!,
-        priority: effectivePriority,
-        team: c.team!,
-        route: effectivePriority === "urgent" ? "urgent" : "standard",
-        status: seed.dispatch.status,
-        autoAttempts: Math.max(1, seed.dispatch.failedAttempts),
+        category: classification.category!,
+        priority,
+        team: classification.team!,
+        route: priority === "urgent" ? "urgent" : "standard",
+        status: seed.dispatch,
+        autoAttempts: attemptCount,
         createdAt: at(),
       })
       .returning();
-    event("dispatch_created", "system", { dispatch_id: dispatch!.id });
+    const dispatchId = dispatch!.id;
+    event("dispatch_created", "system", { dispatch_id: dispatchId });
 
-    const attemptCount = Math.max(1, seed.dispatch.failedAttempts);
-    for (let n = 1; n <= attemptCount; n++) {
-      const succeeded = seed.dispatch.status === "succeeded";
+    for (let attemptNo = 1; attemptNo <= attemptCount; attemptNo++) {
       const startedAt = at();
+      // n8n accepts with 202; the delivery outcome arrives by callback.
+      const finishedAt = succeeded ? at() : startedAt;
       await db.insert(dispatchAttempts).values({
-        dispatchId: dispatch!.id,
-        attemptNo: n,
+        dispatchId,
+        attemptNo,
         trigger: "auto",
-        outcome: succeeded ? "succeeded" : "failed",
-        httpStatus: succeeded ? 200 : 502,
-        n8nExecutionId: succeeded ? `seed-exec-${seed.key}` : null,
-        error: succeeded ? null : "Notifier returned 502",
+        ...(succeeded
+          ? {
+              outcome: "succeeded",
+              httpStatus: 202,
+              n8nExecutionId: `seed-exec-${seed.key}`,
+            }
+          : {
+              outcome: "failed",
+              httpStatus: 502,
+              error: "n8n webhook returned 502",
+            }),
         startedAt,
-        finishedAt: startedAt,
+        finishedAt,
         createdAt: startedAt,
       });
       event("dispatch_attempted", "system", {
-        dispatch_id: dispatch!.id,
-        attempt_no: n,
+        dispatch_id: dispatchId,
+        attempt_no: attemptNo,
       });
+      if (succeeded) {
+        await db
+          .update(dispatches)
+          .set({
+            callbackDeadline: new Date(
+              startedAt.getTime() + CALLBACK_TIMEOUT_MS,
+            ),
+            updatedAt: finishedAt,
+          })
+          .where(eq(dispatches.id, dispatchId));
+      }
     }
-    event(
-      seed.dispatch.status === "succeeded"
-        ? "dispatch_succeeded"
-        : "dispatch_failed",
-      "n8n",
-      { dispatch_id: dispatch!.id },
-    );
+    if (succeeded) {
+      event("dispatch_succeeded", "n8n", { dispatch_id: dispatchId });
+    } else {
+      event("dispatch_failed", "system", { dispatch_id: dispatchId });
+    }
   }
 
   if (seed.status === "resolved" || seed.status === "closed") {

@@ -169,7 +169,8 @@ export const tickets = pgTable(
     ),
     check(
       "tickets_override_has_reason",
-      sql`(${t.priority} is distinct from ${t.computedPriority}) = (${t.priorityOverrideReason} is not null)`,
+      sql`(${t.priority} is distinct from ${t.computedPriority}) = (${t.priorityOverrideReason} is not null)
+        and (${t.priorityOverrideReason} is null or btrim(${t.priorityOverrideReason}) <> '')`,
     ),
     index("tickets_status_idx").on(t.status),
     index("tickets_classification_state_idx").on(t.classificationState),

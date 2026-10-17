@@ -130,11 +130,15 @@ describe("tickets", () => {
     );
   });
 
-  it("rejects a Priority Override without a reason", async () => {
+  it.each([
+    ["no reason", null],
+    ["a blank reason", "   "],
+  ])("rejects a Priority Override with %s", async (_, reason) => {
     const requester = await newRequester();
     const values = ticketValues(requester.id, {
       ...classifiedFacts,
       priority: "high",
+      priorityOverrideReason: reason,
     });
 
     expect(await violatedConstraint(db.insert(tickets).values(values))).toBe(

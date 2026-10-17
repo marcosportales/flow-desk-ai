@@ -127,7 +127,8 @@ CREATE TABLE "tickets" (
         and "tickets"."priority" is not null and "tickets"."computed_priority" is not null
         and "tickets"."team" is not null and "tickets"."classification_source" is not null
       )),
-	CONSTRAINT "tickets_override_has_reason" CHECK (("tickets"."priority" is distinct from "tickets"."computed_priority") = ("tickets"."priority_override_reason" is not null))
+	CONSTRAINT "tickets_override_has_reason" CHECK (("tickets"."priority" is distinct from "tickets"."computed_priority") = ("tickets"."priority_override_reason" is not null)
+        and ("tickets"."priority_override_reason" is null or btrim("tickets"."priority_override_reason") <> ''))
 );
 --> statement-breakpoint
 ALTER TABLE "classification_attempts" ADD CONSTRAINT "classification_attempts_ticket_id_tickets_id_fk" FOREIGN KEY ("ticket_id") REFERENCES "public"."tickets"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
