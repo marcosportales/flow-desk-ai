@@ -1,22 +1,29 @@
-// Simulated notification service. Deliveries and failure modes arrive with SCRUM-12.
-import { createServer } from "node:http";
+import { mkdirSync } from "node:fs";
+import { join } from "node:path";
+import { createNotifier } from "./notifier.ts";
 
 const port = Number(process.env.PORT ?? 4000);
+const dataDir = process.env.DATA_DIR ?? "data";
+mkdirSync(dataDir, { recursive: true });
 
-const server = createServer((req, res) => {
-  if (req.method === "GET" && req.url === "/health") {
-    res.writeHead(200, { "content-type": "application/json" });
-    res.end(JSON.stringify({ status: "ok" }));
-    return;
-  }
-  res.writeHead(404, { "content-type": "application/json" });
-  res.end(
-    JSON.stringify({ error: { code: "not_found", message: "Not found" } }),
-  );
+const slowResponseMs = process.env.SLOW_RESPONSE_MS
+  ? Number(process.env.SLOW_RESPONSE_MS)
+  : undefined;
+if (slowResponseMs !== undefined && !(slowResponseMs >= 0)) {
+  throw new Error("SLOW_RESPONSE_MS must be a non-negative number");
+}
+
+const server = createNotifier({
+  dataFile: join(dataDir, "deliveries.json"),
+  slowResponseMs,
 });
 
 server.listen(port, () => console.log(`notifier listening on ${port}`));
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
-  process.on(signal, () => server.close(() => process.exit(0)));
+  process.on(signal, () => {
+    // Slow-mode requests would otherwise hold shutdown open.
+    server.closeAllConnections();
+    server.close(() => process.exit(0));
+  });
 }
