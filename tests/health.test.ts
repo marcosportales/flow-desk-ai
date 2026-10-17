@@ -1,13 +1,10 @@
 import postgres from "postgres";
 import { afterAll, describe, expect, it } from "vitest";
 import { checkHealth } from "@/services/checkHealth";
-
-const databaseUrl =
-  process.env.TEST_DATABASE_URL ??
-  "postgres://flowdesk:flowdesk@localhost:5432/flowdesk_test";
+import { testDatabaseUrl } from "./support/testDatabaseUrl";
 
 describe("checkHealth", () => {
-  const reachable = postgres(databaseUrl, { max: 1 });
+  const reachable = postgres(testDatabaseUrl, { max: 1 });
   const unreachable = postgres("postgres://nobody:nothing@127.0.0.1:1/none", {
     max: 1,
     connect_timeout: 1,

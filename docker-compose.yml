@@ -35,7 +35,7 @@ services:
 
   migrate:
     <<: *app-image
-    command: ["pnpm", "db:migrate"]
+    command: ["sh", "-c", "pnpm db:migrate && pnpm db:seed"]
     restart: "no"
     depends_on:
       postgres:

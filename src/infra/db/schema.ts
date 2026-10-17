@@ -1,2 +1,320 @@
-// Drizzle schema lands here (SCRUM-7).
-export {};
+import { sql } from "drizzle-orm";
+import {
+  type AnyPgColumn,
+  bigint,
+  boolean,
+  check,
+  index,
+  integer,
+  jsonb,
+  pgEnum,
+  pgTable,
+  text,
+  timestamp,
+  unique,
+  uniqueIndex,
+  uuid,
+} from "drizzle-orm/pg-core";
+
+// Data model: docs/plan/IMPLEMENTATION.md §3.
+
+export const ticketStatus = pgEnum("ticket_status", [
+  "open",
+  "resolved",
+  "closed",
+]);
+export const classificationState = pgEnum("classification_state", [
+  "pending",
+  "classified",
+  "needs_review",
+]);
+export const category = pgEnum("category", [
+  "erp",
+  "access",
+  "data",
+  "inquiry",
+  "other",
+]);
+export const impactScope = pgEnum("impact_scope", [
+  "individual",
+  "team",
+  "organization",
+]);
+export const classificationSource = pgEnum("classification_source", [
+  "ai",
+  "human",
+]);
+export const priority = pgEnum("priority", ["low", "normal", "high", "urgent"]);
+export const team = pgEnum("team", [
+  "it_systems",
+  "identity_access",
+  "data_team",
+  "service_desk",
+]);
+export const classificationAttemptKind = pgEnum("classification_attempt_kind", [
+  "initial",
+  "repair",
+  "rerun",
+]);
+export const classificationOutcome = pgEnum("classification_outcome", [
+  "valid",
+  "invalid_output",
+  "provider_error",
+]);
+export const route = pgEnum("route", ["standard", "urgent"]);
+export const dispatchStatus = pgEnum("dispatch_status", [
+  "pending",
+  "sent",
+  "succeeded",
+  "failed",
+  "unknown",
+]);
+export const dispatchTrigger = pgEnum("dispatch_trigger", [
+  "auto",
+  "manual",
+  "reconcile",
+]);
+export const dispatchAttemptOutcome = pgEnum("dispatch_attempt_outcome", [
+  "sent",
+  "succeeded",
+  "failed",
+  "unknown",
+]);
+export const jobKind = pgEnum("job_kind", [
+  "classify",
+  "dispatch",
+  "reconcile",
+]);
+export const jobStatus = pgEnum("job_status", [
+  "queued",
+  "running",
+  "done",
+  "dead",
+]);
+export const eventActor = pgEnum("event_actor", [
+  "system",
+  "ai",
+  "human",
+  "n8n",
+]);
+
+const createdAt = () =>
+  timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
+const updatedAt = () =>
+  timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow()
+    .$onUpdate(() => new Date());
+
+export const requesters = pgTable("requesters", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  email: text("email").notNull().unique(),
+  department: text("department").notNull(),
+  createdAt: createdAt(),
+});
+
+export const tickets = pgTable(
+  "tickets",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    number: integer("number").generatedAlwaysAsIdentity().unique(),
+    requesterId: uuid("requester_id")
+      .notNull()
+      .references(() => requesters.id),
+    title: text("title").notNull(),
+    // The Request as submitted; never modified.
+    description: text("description").notNull(),
+    status: ticketStatus("status").notNull().default("open"),
+    classificationState: classificationState("classification_state")
+      .notNull()
+      .default("pending"),
+    category: category("category"),
+    summary: text("summary"),
+    blocksWork: boolean("blocks_work"),
+    impactScope: impactScope("impact_scope"),
+    classificationSource: classificationSource("classification_source"),
+    // Effective Priority; differs from computedPriority only on a Priority Override.
+    priority: priority("priority"),
+    computedPriority: priority("computed_priority"),
+    priorityRule: text("priority_rule"),
+    priorityOverrideReason: text("priority_override_reason"),
+    team: team("team"),
+    idempotencyKey: text("idempotency_key").notNull(),
+    requestHash: text("request_hash").notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    unique("tickets_requester_idempotency_key_unique").on(
+      t.requesterId,
+      t.idempotencyKey,
+    ),
+    check(
+      "tickets_title_length",
+      sql`char_length(${t.title}) between 3 and 200`,
+    ),
+    check(
+      "tickets_description_length",
+      sql`char_length(${t.description}) between 10 and 5000`,
+    ),
+    check(
+      "tickets_classified_has_facts",
+      sql`${t.classificationState} <> 'classified' or (
+        ${t.category} is not null and ${t.summary} is not null
+        and ${t.blocksWork} is not null and ${t.impactScope} is not null
+        and ${t.priority} is not null and ${t.computedPriority} is not null
+        and ${t.team} is not null and ${t.classificationSource} is not null
+      )`,
+    ),
+    check(
+      "tickets_override_has_reason",
+      sql`(${t.priority} is distinct from ${t.computedPriority}) = (${t.priorityOverrideReason} is not null)`,
+    ),
+    index("tickets_status_idx").on(t.status),
+    index("tickets_classification_state_idx").on(t.classificationState),
+    index("tickets_category_idx").on(t.category),
+    index("tickets_priority_idx").on(t.priority),
+    index("tickets_created_at_idx").on(t.createdAt.desc()),
+  ],
+);
+
+export const classificationAttempts = pgTable(
+  "classification_attempts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    ticketId: uuid("ticket_id")
+      .notNull()
+      .references(() => tickets.id),
+    attemptNo: integer("attempt_no").notNull(),
+    kind: classificationAttemptKind("kind").notNull(),
+    outcome: classificationOutcome("outcome").notNull(),
+    provider: text("provider").notNull(),
+    model: text("model").notNull(),
+    // Kept for invalid outputs so they can be inspected (Scenario D).
+    rawOutput: text("raw_output"),
+    parsed: jsonb("parsed"),
+    error: text("error"),
+    latencyMs: integer("latency_ms"),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    unique("classification_attempts_ticket_attempt_no_unique").on(
+      t.ticketId,
+      t.attemptNo,
+    ),
+  ],
+);
+
+export const dispatches = pgTable(
+  "dispatches",
+  {
+    // Also the Dispatch's idempotency key end-to-end (n8n and the notifier).
+    id: uuid("id").primaryKey().defaultRandom(),
+    ticketId: uuid("ticket_id")
+      .notNull()
+      .references(() => tickets.id),
+    sequence: integer("sequence").notNull(),
+    // Snapshot of the routing decision at the time of the Dispatch.
+    category: category("category").notNull(),
+    priority: priority("priority").notNull(),
+    team: team("team").notNull(),
+    route: route("route").notNull(),
+    status: dispatchStatus("status").notNull().default("pending"),
+    autoAttempts: integer("auto_attempts").notNull().default(0),
+    callbackDeadline: timestamp("callback_deadline", { withTimezone: true }),
+    supersededBy: uuid("superseded_by").references(
+      (): AnyPgColumn => dispatches.id,
+    ),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    unique("dispatches_ticket_sequence_unique").on(t.ticketId, t.sequence),
+    uniqueIndex("dispatches_one_active_per_ticket")
+      .on(t.ticketId)
+      .where(sql`${t.status} in ('pending', 'sent', 'unknown')`),
+  ],
+);
+
+// Append-only.
+export const dispatchAttempts = pgTable(
+  "dispatch_attempts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    dispatchId: uuid("dispatch_id")
+      .notNull()
+      .references(() => dispatches.id),
+    attemptNo: integer("attempt_no").notNull(),
+    trigger: dispatchTrigger("trigger").notNull(),
+    outcome: dispatchAttemptOutcome("outcome").notNull(),
+    httpStatus: integer("http_status"),
+    n8nExecutionId: text("n8n_execution_id"),
+    error: text("error"),
+    startedAt: timestamp("started_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    unique("dispatch_attempts_dispatch_attempt_no_unique").on(
+      t.dispatchId,
+      t.attemptNo,
+    ),
+  ],
+);
+
+export const jobs = pgTable(
+  "jobs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    kind: jobKind("kind").notNull(),
+    ticketId: uuid("ticket_id")
+      .notNull()
+      .references(() => tickets.id),
+    dispatchId: uuid("dispatch_id").references(() => dispatches.id),
+    status: jobStatus("status").notNull().default("queued"),
+    // Backoff: a queued job is not claimable before run_at.
+    runAt: timestamp("run_at", { withTimezone: true }).notNull().defaultNow(),
+    attempts: integer("attempts").notNull().default(0),
+    maxAttempts: integer("max_attempts").notNull().default(3),
+    // Lease: a running job whose lock is stale is reclaimable.
+    lockedAt: timestamp("locked_at", { withTimezone: true }),
+    lockedBy: text("locked_by"),
+    lastError: text("last_error"),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    // A null dispatch_id counts as one value, so a Ticket has at most one
+    // active classify job.
+    uniqueIndex("jobs_one_active_per_target")
+      .on(
+        t.kind,
+        t.ticketId,
+        sql`coalesce(${t.dispatchId}, '00000000-0000-0000-0000-000000000000'::uuid)`,
+      )
+      .where(sql`${t.status} in ('queued', 'running')`),
+    index("jobs_claimable_idx").on(t.status, t.runAt),
+  ],
+);
+
+// Append-only; `id` gives the order of events.
+export const ticketEvents = pgTable(
+  "ticket_events",
+  {
+    id: bigint("id", { mode: "number" })
+      .primaryKey()
+      .generatedAlwaysAsIdentity(),
+    ticketId: uuid("ticket_id")
+      .notNull()
+      .references(() => tickets.id),
+    // ticket_created, classified, priority_computed, dispatch_succeeded, …
+    // (full list in IMPLEMENTATION.md §3).
+    type: text("type").notNull(),
+    actor: eventActor("actor").notNull(),
+    data: jsonb("data").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("ticket_events_ticket_id_idx").on(t.ticketId, t.id)],
+);
