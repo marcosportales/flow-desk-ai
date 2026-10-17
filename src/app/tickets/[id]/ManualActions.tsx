@@ -1,6 +1,24 @@
 "use client";
 
 import { type ReactNode, useActionState } from "react";
+import { AlertCircleIcon, CheckCircle2Icon } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import {
+  NativeSelect,
+  NativeSelectOption,
+} from "@/components/ui/native-select";
+import { Spinner } from "@/components/ui/spinner";
 import { categories, impactScopes } from "@/domain/classification";
 import { priorities } from "@/domain/priority";
 import { ticketStatuses } from "@/domain/transitions";
@@ -12,6 +30,7 @@ import {
   retryAction,
   statusAction,
 } from "./actions";
+import { label } from "@/lib/format";
 
 type Props = {
   ticketId: string;
@@ -23,11 +42,6 @@ type Props = {
 };
 
 const idle: ManualActionState = { status: "idle" };
-const field = "rounded-md border border-slate-300 px-2 py-1 text-sm";
-const button =
-  "rounded-md bg-slate-800 px-3 py-1 text-sm text-white disabled:opacity-50";
-const label = (value: string) => value.replaceAll("_", " ");
-
 function ActionForm({
   title,
   action,
@@ -46,26 +60,36 @@ function ActionForm({
 }) {
   const [state, run, pending] = useActionState(action, idle);
   return (
-    <form
-      action={run}
-      className="space-y-2 rounded-md border border-slate-200 p-3"
-    >
-      <h3 className="font-medium">{title}</h3>
-      <input type="hidden" name="ticketId" value={ticketId} />
-      {children}
-      <button type="submit" disabled={pending} className={button}>
-        {submit}
-      </button>
-      {state.status === "error" && (
-        <p role="alert" className="text-sm text-red-800">
-          {state.message}
-        </p>
-      )}
-      {state.status === "ok" && (
-        <p role="status" className="text-sm text-green-800">
-          {state.message}
-        </p>
-      )}
+    <form action={run}>
+      <Card size="sm">
+        <CardHeader>
+          <CardTitle>
+            <h3>{title}</h3>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <input type="hidden" name="ticketId" value={ticketId} />
+          <FieldGroup className="gap-3">{children}</FieldGroup>
+        </CardContent>
+        <CardFooter className="flex-col items-stretch gap-2">
+          <Button type="submit" disabled={pending} className="self-start">
+            {pending && <Spinner data-icon="inline-start" />}
+            {submit}
+          </Button>
+          {state.status === "error" && (
+            <Alert variant="destructive" role="alert">
+              <AlertCircleIcon />
+              <AlertDescription>{state.message}</AlertDescription>
+            </Alert>
+          )}
+          {state.status === "ok" && (
+            <Alert role="status">
+              <CheckCircle2Icon />
+              <AlertDescription>{state.message}</AlertDescription>
+            </Alert>
+          )}
+        </CardFooter>
+      </Card>
     </form>
   );
 }
@@ -97,50 +121,65 @@ export function ManualActions({
           ticketId={ticketId}
           submit="Save classification"
         >
-          <div className="grid gap-2 sm:grid-cols-2">
-            <label className="text-sm">
-              Category
-              <select name="category" required className={`${field} w-full`}>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field>
+              <FieldLabel htmlFor="classify-category">Category</FieldLabel>
+              <NativeSelect
+                id="classify-category"
+                name="category"
+                required
+                className="w-full"
+              >
                 {categories.map((c) => (
-                  <option key={c} value={c}>
+                  <NativeSelectOption key={c} value={c}>
                     {c}
-                  </option>
+                  </NativeSelectOption>
                 ))}
-              </select>
-            </label>
-            <label className="text-sm">
-              Impact Scope
-              <select name="impact_scope" className={`${field} w-full`}>
+              </NativeSelect>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="classify-impact-scope">
+                Impact Scope
+              </FieldLabel>
+              <NativeSelect
+                id="classify-impact-scope"
+                name="impact_scope"
+                className="w-full"
+              >
                 {impactScopes.map((s) => (
-                  <option key={s} value={s}>
+                  <NativeSelectOption key={s} value={s}>
                     {s}
-                  </option>
+                  </NativeSelectOption>
                 ))}
-              </select>
-            </label>
+              </NativeSelect>
+            </Field>
           </div>
-          <label className="block text-sm">
-            Summary
-            <input
+          <Field>
+            <FieldLabel htmlFor="classify-summary">Summary</FieldLabel>
+            <Input
+              id="classify-summary"
               name="summary"
               required
               maxLength={200}
-              className={`${field} w-full`}
             />
-          </label>
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" name="blocks_work" value="yes" />
-            Blocks work
-          </label>
-          <label className="block text-sm">
-            Reason
-            <input
+          </Field>
+          <Field orientation="horizontal">
+            <Checkbox
+              id="classify-blocks-work"
+              name="blocks_work"
+              value="yes"
+            />
+            <FieldLabel htmlFor="classify-blocks-work">Blocks work</FieldLabel>
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="classify-reason">Reason</FieldLabel>
+            <Input
+              id="classify-reason"
               name="reason"
               required
               maxLength={500}
-              className={`${field} w-full`}
             />
-          </label>
+          </Field>
         </ActionForm>
       )}
       {classificationState === "classified" && (
@@ -150,29 +189,30 @@ export function ManualActions({
           ticketId={ticketId}
           submit="Override Priority"
         >
-          <label className="block text-sm">
-            Priority
-            <select
+          <Field>
+            <FieldLabel htmlFor="override-priority">Priority</FieldLabel>
+            <NativeSelect
+              id="override-priority"
               name="priority"
               defaultValue={priority ?? undefined}
-              className={`${field} w-full`}
+              className="w-full"
             >
               {priorities.map((p) => (
-                <option key={p} value={p}>
+                <NativeSelectOption key={p} value={p}>
                   {p}
-                </option>
+                </NativeSelectOption>
               ))}
-            </select>
-          </label>
-          <label className="block text-sm">
-            Reason (required)
-            <input
+            </NativeSelect>
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="override-reason">Reason (required)</FieldLabel>
+            <Input
+              id="override-reason"
               name="reason"
               required
               maxLength={500}
-              className={`${field} w-full`}
             />
-          </label>
+          </Field>
         </ActionForm>
       )}
       <ActionForm
@@ -181,20 +221,21 @@ export function ManualActions({
         ticketId={ticketId}
         submit="Change status"
       >
-        <label className="block text-sm">
-          Status
-          <select
+        <Field>
+          <FieldLabel htmlFor="status-select">Status</FieldLabel>
+          <NativeSelect
+            id="status-select"
             name="status"
             defaultValue={ticketStatus}
-            className={`${field} w-full`}
+            className="w-full"
           >
             {ticketStatuses.map((s) => (
-              <option key={s} value={s}>
+              <NativeSelectOption key={s} value={s}>
                 {label(s)}
-              </option>
+              </NativeSelectOption>
             ))}
-          </select>
-        </label>
+          </NativeSelect>
+        </Field>
       </ActionForm>
       {failedDispatchId && (
         <ActionForm
@@ -204,7 +245,7 @@ export function ManualActions({
           submit="Retry Dispatch"
         >
           <input type="hidden" name="dispatchId" value={failedDispatchId} />
-          <p className="text-sm text-slate-600">
+          <p className="text-sm text-muted-foreground">
             The latest Dispatch failed. Retrying keeps its id, so the notifier
             sees the same idempotency key.
           </p>

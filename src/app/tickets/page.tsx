@@ -1,4 +1,29 @@
 import Link from "next/link";
+import { AlertCircleIcon } from "lucide-react";
+import { StatusBadge } from "@/components/status-badge";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import {
+  NativeSelect,
+  NativeSelectOption,
+} from "@/components/ui/native-select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { categories } from "@/domain/classification";
 import { priorities } from "@/domain/priority";
 import {
@@ -12,6 +37,7 @@ import {
   listTickets,
   type TicketListItem,
 } from "@/services/listTickets";
+import { label } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
@@ -33,90 +59,54 @@ const filters = [
   },
 ] as const;
 
-const label = (value: string) => value.replaceAll("_", " ");
-
 const dateFormat = new Intl.DateTimeFormat("en", {
   dateStyle: "medium",
   timeStyle: "short",
   timeZone: "UTC",
 });
 
-function Badge({ value, tone }: { value: string | null; tone?: string }) {
-  if (!value) return <span className="text-slate-400">—</span>;
-  return (
-    <span
-      className={`rounded-full px-2 py-0.5 text-xs font-medium ${tone ?? "bg-slate-100 text-slate-700"}`}
-    >
-      {label(value)}
-    </span>
-  );
-}
-
-const priorityTone: Record<string, string> = {
-  urgent: "bg-red-100 text-red-800",
-  high: "bg-orange-100 text-orange-800",
-};
-const dispatchTone: Record<string, string> = {
-  failed: "bg-red-100 text-red-800",
-  unknown: "bg-amber-100 text-amber-800",
-  succeeded: "bg-green-100 text-green-800",
-};
-
 function Counter({ name, value }: { name: string; value: number }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4">
-      <div className="text-2xl font-semibold">{value}</div>
-      <div className="text-sm text-slate-500">{name}</div>
-    </div>
+    <Card size="sm">
+      <CardHeader>
+        <CardDescription>{name}</CardDescription>
+        <CardTitle className="text-2xl">{value}</CardTitle>
+      </CardHeader>
+    </Card>
   );
 }
 
 function Row({ ticket }: { ticket: TicketListItem }) {
   return (
-    <tr className="border-t border-slate-100">
-      <td className="px-3 py-2 font-mono text-slate-500">#{ticket.number}</td>
-      <td className="px-3 py-2 font-medium">
-        <Link href={`/tickets/${ticket.id}`} className="underline">
+    <TableRow>
+      <TableCell className="font-mono text-muted-foreground">
+        #{ticket.number}
+      </TableCell>
+      <TableCell className="font-medium">
+        <Link href={`/tickets/${ticket.id}`} className="hover:underline">
           {ticket.title}
         </Link>
-      </td>
-      <td className="px-3 py-2">{ticket.requesterName}</td>
-      <td className="px-3 py-2">
-        <Badge value={ticket.category} />
-      </td>
-      <td className="px-3 py-2">
-        <Badge
-          value={ticket.priority}
-          tone={ticket.priority ? priorityTone[ticket.priority] : undefined}
-        />
-      </td>
-      <td className="px-3 py-2">
-        <Badge value={ticket.status} />
-      </td>
-      <td className="px-3 py-2">
-        <Badge
-          value={ticket.classificationState}
-          tone={
-            ticket.classificationState === "needs_review"
-              ? "bg-amber-100 text-amber-800"
-              : undefined
-          }
-        />
-      </td>
-      <td className="px-3 py-2">
-        <Badge
-          value={ticket.dispatchStatus}
-          tone={
-            ticket.dispatchStatus
-              ? dispatchTone[ticket.dispatchStatus]
-              : undefined
-          }
-        />
-      </td>
-      <td className="whitespace-nowrap px-3 py-2 text-slate-500">
+      </TableCell>
+      <TableCell>{ticket.requesterName}</TableCell>
+      <TableCell>
+        <StatusBadge value={ticket.category} />
+      </TableCell>
+      <TableCell>
+        <StatusBadge value={ticket.priority} />
+      </TableCell>
+      <TableCell>
+        <StatusBadge value={ticket.status} />
+      </TableCell>
+      <TableCell>
+        <StatusBadge value={ticket.classificationState} />
+      </TableCell>
+      <TableCell>
+        <StatusBadge value={ticket.dispatchStatus} />
+      </TableCell>
+      <TableCell className="whitespace-nowrap text-muted-foreground">
         {dateFormat.format(ticket.createdAt)} UTC
-      </td>
-    </tr>
+      </TableCell>
+    </TableRow>
   );
 }
 
@@ -144,17 +134,13 @@ export default async function TicketsPage({
     return `/tickets?${next}`;
   };
 
+  const hasFilters = Object.entries(query).some(
+    ([k, v]) => v && k !== "page" && k !== "page_size",
+  );
+
   return (
-    <main className="mx-auto max-w-7xl space-y-6 p-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Tickets</h1>
-        <Link
-          href="/tickets/new"
-          className="rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white"
-        >
-          New Request
-        </Link>
-      </div>
+    <main className="mx-auto flex max-w-7xl flex-col gap-6 p-6">
+      <h1 className="font-heading text-2xl font-semibold">Tickets</h1>
 
       <section
         aria-label="Counters"
@@ -166,64 +152,70 @@ export default async function TicketsPage({
         <Counter name="Urgent" value={counters.urgent} />
       </section>
 
-      <form method="get" className="flex flex-wrap items-end gap-3">
-        <label className="flex flex-col text-sm">
-          Search title
-          <input
-            type="search"
-            name="q"
-            defaultValue={query.q ?? ""}
-            className="rounded-md border border-slate-300 bg-white px-2 py-1.5"
-          />
-        </label>
-        {filters.map((f) => (
-          <label key={f.name} className="flex flex-col text-sm">
-            {f.label}
-            <select
-              name={f.name}
-              defaultValue={query[f.name] ?? ""}
-              className="rounded-md border border-slate-300 bg-white px-2 py-1.5"
+      <form method="get">
+        <FieldGroup className="flex-row flex-wrap items-end gap-3">
+          <Field className="w-auto">
+            <FieldLabel htmlFor="q">Search title</FieldLabel>
+            <Input id="q" type="search" name="q" defaultValue={query.q ?? ""} />
+          </Field>
+          {filters.map((f) => (
+            <Field key={f.name} className="w-auto">
+              <FieldLabel htmlFor={f.name}>{f.label}</FieldLabel>
+              <NativeSelect
+                id={f.name}
+                name={f.name}
+                defaultValue={query[f.name] ?? ""}
+              >
+                <NativeSelectOption value="">All</NativeSelectOption>
+                {f.options.map((o) => (
+                  <NativeSelectOption key={o} value={o}>
+                    {label(o)}
+                  </NativeSelectOption>
+                ))}
+              </NativeSelect>
+            </Field>
+          ))}
+          <div className="flex gap-2">
+            <Button type="submit">Apply</Button>
+            <Button
+              variant="outline"
+              nativeButton={false}
+              render={<Link href="/tickets" />}
             >
-              <option value="">All</option>
-              {f.options.map((o) => (
-                <option key={o} value={o}>
-                  {label(o)}
-                </option>
-              ))}
-            </select>
-          </label>
-        ))}
-        <button className="rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white">
-          Apply
-        </button>
-        <Link href="/tickets" className="py-2 text-sm text-slate-600 underline">
-          Clear
-        </Link>
+              Clear
+            </Button>
+          </div>
+        </FieldGroup>
       </form>
 
       {result.kind === "invalid" ? (
-        <p role="alert" className="rounded-md bg-red-50 p-4 text-red-800">
-          Some filters are invalid.{" "}
-          <Link href="/tickets" className="underline">
-            Clear filters
-          </Link>
-        </p>
+        <Alert variant="destructive" role="alert">
+          <AlertCircleIcon />
+          <AlertTitle>Some filters are invalid.</AlertTitle>
+          <AlertDescription>
+            <Link href="/tickets" className="underline">
+              Clear filters
+            </Link>
+          </AlertDescription>
+        </Alert>
       ) : result.tickets.length === 0 ? (
-        <p className="rounded-md border border-dashed border-slate-300 p-8 text-center text-slate-500">
-          {Object.entries(query).some(
-            ([k, v]) => v && k !== "page" && k !== "page_size",
-          )
-            ? "No Tickets match these filters."
-            : result.total > 0
-              ? "This page is empty."
-              : "No Tickets yet. Submit the first Request."}
-        </p>
+        <Empty className="border">
+          <EmptyHeader>
+            <EmptyTitle>
+              {hasFilters
+                ? "No Tickets match these filters."
+                : result.total > 0
+                  ? "This page is empty."
+                  : "No Tickets yet. Submit the first Request."}
+            </EmptyTitle>
+          </EmptyHeader>
+        </Empty>
       ) : (
         <>
-          <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-slate-50 text-slate-500">
-                <tr>
+          <Card className="py-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
                   {[
                     "Ticket",
                     "Title",
@@ -235,35 +227,43 @@ export default async function TicketsPage({
                     "Dispatch",
                     "Created",
                   ].map((h) => (
-                    <th key={h} className="px-3 py-2 font-medium">
-                      {h}
-                    </th>
+                    <TableHead key={h}>{h}</TableHead>
                   ))}
-                </tr>
-              </thead>
-              <tbody>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {result.tickets.map((t) => (
                   <Row key={t.id} ticket={t} />
                 ))}
-              </tbody>
-            </table>
-          </div>
-          <nav className="flex items-center justify-between text-sm text-slate-600">
+              </TableBody>
+            </Table>
+          </Card>
+          <nav className="flex items-center justify-between text-sm text-muted-foreground">
             <span>
               {result.total} Ticket{result.total === 1 ? "" : "s"} · page{" "}
               {result.page} of{" "}
               {Math.max(1, Math.ceil(result.total / result.pageSize))}
             </span>
-            <span className="space-x-4">
+            <span className="flex gap-2">
               {result.page > 1 && (
-                <Link href={pageHref(result.page - 1)} className="underline">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  nativeButton={false}
+                  render={<Link href={pageHref(result.page - 1)} />}
+                >
                   Previous
-                </Link>
+                </Button>
               )}
               {result.page * result.pageSize < result.total && (
-                <Link href={pageHref(result.page + 1)} className="underline">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  nativeButton={false}
+                  render={<Link href={pageHref(result.page + 1)} />}
+                >
                   Next
-                </Link>
+                </Button>
               )}
             </span>
           </nav>

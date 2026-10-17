@@ -1,6 +1,23 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState } from "react";
+import { AlertCircleIcon, CheckCircle2Icon } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import {
+  Field,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+} from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import {
+  NativeSelect,
+  NativeSelectOption,
+} from "@/components/ui/native-select";
+import { Spinner } from "@/components/ui/spinner";
+import { Textarea } from "@/components/ui/textarea";
 import { type SubmitRequestState, submitRequest } from "./actions";
 
 type Props = {
@@ -18,10 +35,15 @@ export function RequestForm({ requesters, idempotencyKey }: Props) {
 
   if (state.status === "created") {
     return (
-      <p role="status">
-        Ticket #{state.ticketNumber} created.{" "}
-        <a href="/tickets/new">Submit another Request</a>
-      </p>
+      <Alert role="status">
+        <CheckCircle2Icon />
+        <AlertTitle>Ticket #{state.ticketNumber} created.</AlertTitle>
+        <AlertDescription>
+          <Link href="/tickets/new" className="underline">
+            Submit another Request
+          </Link>
+        </AlertDescription>
+      </Alert>
     );
   }
 
@@ -30,50 +52,68 @@ export function RequestForm({ requesters, idempotencyKey }: Props) {
   return (
     <form action={action}>
       <input type="hidden" name="idempotencyKey" value={idempotencyKey} />
-      {state.status === "error" && <p role="alert">{state.message}</p>}
-      <p>
-        <label>
-          Requester
-          <select name="requesterId" required defaultValue="">
-            <option value="" disabled>
-              Select a Requester
-            </option>
-            {requesters.map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.name} ({r.department})
-              </option>
-            ))}
-          </select>
-        </label>
-        {errors?.requesterId && (
-          <span role="alert">{errors.requesterId[0]}</span>
+      <FieldGroup>
+        {state.status === "error" && (
+          <Alert variant="destructive" role="alert">
+            <AlertCircleIcon />
+            <AlertTitle>{state.message}</AlertTitle>
+          </Alert>
         )}
-      </p>
-      <p>
-        <label>
-          Title
-          <input name="title" required minLength={3} maxLength={200} />
-        </label>
-        {errors?.title && <span role="alert">{errors.title[0]}</span>}
-      </p>
-      <p>
-        <label>
-          Description
-          <textarea
+        <Field data-invalid={!!errors?.requesterId}>
+          <FieldLabel htmlFor="requesterId">Requester</FieldLabel>
+          <NativeSelect
+            id="requesterId"
+            name="requesterId"
+            required
+            defaultValue=""
+            aria-invalid={!!errors?.requesterId}
+            className="w-full"
+          >
+            <NativeSelectOption value="" disabled>
+              Select a Requester
+            </NativeSelectOption>
+            {requesters.map((r) => (
+              <NativeSelectOption key={r.id} value={r.id}>
+                {r.name} ({r.department})
+              </NativeSelectOption>
+            ))}
+          </NativeSelect>
+          {errors?.requesterId && (
+            <FieldError>{errors.requesterId[0]}</FieldError>
+          )}
+        </Field>
+        <Field data-invalid={!!errors?.title}>
+          <FieldLabel htmlFor="title">Title</FieldLabel>
+          <Input
+            id="title"
+            name="title"
+            required
+            minLength={3}
+            maxLength={200}
+            aria-invalid={!!errors?.title}
+          />
+          {errors?.title && <FieldError>{errors.title[0]}</FieldError>}
+        </Field>
+        <Field data-invalid={!!errors?.description}>
+          <FieldLabel htmlFor="description">Description</FieldLabel>
+          <Textarea
+            id="description"
             name="description"
             required
             minLength={10}
             maxLength={5000}
             rows={6}
+            aria-invalid={!!errors?.description}
           />
-        </label>
-        {errors?.description && (
-          <span role="alert">{errors.description[0]}</span>
-        )}
-      </p>
-      <button type="submit" disabled={pending}>
-        {pending ? "Submitting…" : "Submit Request"}
-      </button>
+          {errors?.description && (
+            <FieldError>{errors.description[0]}</FieldError>
+          )}
+        </Field>
+        <Button type="submit" disabled={pending} className="self-start">
+          {pending && <Spinner data-icon="inline-start" />}
+          {pending ? "Submitting…" : "Submit Request"}
+        </Button>
+      </FieldGroup>
     </form>
   );
 }
