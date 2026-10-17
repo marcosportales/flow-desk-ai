@@ -52,10 +52,12 @@ export function createNotifier(options: NotifierOptions) {
         "Idempotency-Key header is required",
       );
     }
+    const body = await readJson(req);
+    // Checked after the body is read so that the check and the store below
+    // run without an await between them: a concurrent request with the same
+    // key cannot slip in and store twice.
     const existing = deliveries.get(key);
     if (existing) return sendJson(res, 200, existing);
-
-    const body = await readJson(req);
     if (
       !isRecord(body) ||
       typeof body.channel !== "string" ||
@@ -98,7 +100,7 @@ export function createNotifier(options: NotifierOptions) {
   async function postMode(req: IncomingMessage, res: ServerResponse) {
     const body = await readJson(req);
     const requested = isRecord(body) ? body.mode : undefined;
-    if (!MODES.includes(requested as Mode)) {
+    if (!isMode(requested)) {
       return sendError(
         res,
         400,
@@ -106,7 +108,7 @@ export function createNotifier(options: NotifierOptions) {
         `mode must be one of: ${MODES.join(", ")}`,
       );
     }
-    mode = requested as Mode;
+    mode = requested;
     console.log(`notifier mode: ${mode}`);
     sendJson(res, 200, { mode });
   }
@@ -131,7 +133,7 @@ export function createNotifier(options: NotifierOptions) {
       }
       const lookup = /^\/deliveries\/([^/]+)$/.exec(pathname);
       if (req.method === "GET" && lookup) {
-        const delivery = deliveries.get(decodeURIComponent(lookup[1]!));
+        const delivery = deliveries.get(safeDecode(lookup[1]!));
         return delivery
           ? sendJson(res, 200, delivery)
           : sendError(res, 404, "not_found", "Delivery not found");
@@ -160,6 +162,19 @@ async function readJson(req: IncomingMessage): Promise<unknown> {
     return JSON.parse(Buffer.concat(chunks).toString("utf8"));
   } catch {
     return undefined;
+  }
+}
+
+function isMode(value: unknown): value is Mode {
+  return MODES.includes(value as Mode);
+}
+
+// A malformed escape cannot name a stored delivery, so it is a plain miss.
+function safeDecode(segment: string) {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return segment;
   }
 }
 

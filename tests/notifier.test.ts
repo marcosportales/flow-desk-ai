@@ -1,5 +1,5 @@
 import { mkdtemp, rm } from "node:fs/promises";
-import type { Server } from "node:http";
+import { request, type IncomingMessage, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -37,9 +37,11 @@ function deliver(
   base: string,
   key: string | null,
   body: unknown = { channel: "#it-systems", message: "ERP is down" },
+  signal?: AbortSignal,
 ) {
   return fetch(`${base}/deliveries`, {
     method: "POST",
+    signal,
     headers: {
       "content-type": "application/json",
       ...(key === null ? {} : { "idempotency-key": key }),
@@ -74,6 +76,34 @@ describe("notifier deliveries", () => {
     expect(page).not.toContain("different body");
   });
 
+  it("stores a delivery once when the same key arrives while another is in flight", async () => {
+    const base = await start();
+
+    // The slow request sends its headers now and its body only after a
+    // second request with the same key has been stored.
+    const slow = request(`${base}/deliveries`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "idempotency-key": "d-race",
+      },
+    });
+    slow.flushHeaders();
+    const slowResponse = new Promise<IncomingMessage>((resolve) =>
+      slow.on("response", resolve),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const fast = await deliver(base, "d-race");
+    slow.end(JSON.stringify({ channel: "#late", message: "late body" }));
+    const late = await slowResponse;
+
+    expect(fast.status).toBe(201);
+    expect(late.statusCode).toBe(200);
+    expect(await (await fetch(`${base}/deliveries/d-race`)).json()).toEqual(
+      await fast.json(),
+    );
+  });
+
   it("rejects a delivery without an Idempotency-Key", async () => {
     const base = await start();
 
@@ -96,6 +126,7 @@ describe("notifier deliveries", () => {
     expect(found.status).toBe(200);
     expect(await found.json()).toEqual(stored);
     expect(missing.status).toBe(404);
+    expect((await fetch(`${restarted}/deliveries/%E0%A4%A`)).status).toBe(404);
   });
 });
 
@@ -143,22 +174,18 @@ describe("notifier failure modes", () => {
   });
 
   // The client gives up before the notifier answers, like n8n's HTTP timeout.
-  function deliverWithClientTimeout(base: string, key: string) {
-    return fetch(`${base}/deliveries`, {
-      method: "POST",
-      headers: { "content-type": "application/json", "idempotency-key": key },
-      body: JSON.stringify({ channel: "#it-systems", message: "ERP is down" }),
-      signal: AbortSignal.timeout(50),
-    });
-  }
+  const clientTimeout = () => AbortSignal.timeout(50);
 
   it("timeout: the client times out and nothing is stored", async () => {
     const base = await start({ slowResponseMs: 150 });
     await setMode(base, "timeout");
 
-    await expect(deliverWithClientTimeout(base, "d-5")).rejects.toThrow();
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    await expect(
+      deliver(base, "d-5", undefined, clientTimeout()),
+    ).rejects.toThrow();
+    const patient = await deliver(base, "d-5");
 
+    expect(patient.status).toBe(504);
     expect((await fetch(`${base}/deliveries/d-5`)).status).toBe(404);
   });
 
@@ -166,7 +193,9 @@ describe("notifier failure modes", () => {
     const base = await start({ slowResponseMs: 150 });
     await setMode(base, "accept_then_drop_callback");
 
-    await expect(deliverWithClientTimeout(base, "d-6")).rejects.toThrow();
+    await expect(
+      deliver(base, "d-6", undefined, clientTimeout()),
+    ).rejects.toThrow();
 
     const found = await fetch(`${base}/deliveries/d-6`);
     expect(found.status).toBe(200);

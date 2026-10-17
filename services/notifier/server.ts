@@ -6,11 +6,16 @@ const port = Number(process.env.PORT ?? 4000);
 const dataDir = process.env.DATA_DIR ?? "data";
 mkdirSync(dataDir, { recursive: true });
 
+const slowResponseMs = process.env.SLOW_RESPONSE_MS
+  ? Number(process.env.SLOW_RESPONSE_MS)
+  : undefined;
+if (slowResponseMs !== undefined && !(slowResponseMs >= 0)) {
+  throw new Error("SLOW_RESPONSE_MS must be a non-negative number");
+}
+
 const server = createNotifier({
   dataFile: join(dataDir, "deliveries.json"),
-  slowResponseMs: process.env.SLOW_RESPONSE_MS
-    ? Number(process.env.SLOW_RESPONSE_MS)
-    : undefined,
+  slowResponseMs,
 });
 
 server.listen(port, () => console.log(`notifier listening on ${port}`));
