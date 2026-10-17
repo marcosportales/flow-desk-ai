@@ -75,7 +75,11 @@ function Row({ ticket }: { ticket: TicketListItem }) {
   return (
     <tr className="border-t border-slate-100">
       <td className="px-3 py-2 font-mono text-slate-500">#{ticket.number}</td>
-      <td className="px-3 py-2 font-medium">{ticket.title}</td>
+      <td className="px-3 py-2 font-medium">
+        <Link href={`/tickets/${ticket.id}`} className="underline">
+          {ticket.title}
+        </Link>
+      </td>
       <td className="px-3 py-2">{ticket.requesterName}</td>
       <td className="px-3 py-2">
         <Badge value={ticket.category} />
