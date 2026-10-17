@@ -30,7 +30,7 @@ Optional, if time allows: mode `accept_then_drop_callback` is the lost-response 
 
 ## 5. Scenario D, invalid AI output (45 s)
 
-Set `FAKE_CLASSIFIER_MODE=invalid` in `.env` and run `docker compose up -d worker`. Submit any Request. After the repair attempt the Ticket lands in **needs review** with the raw output visible and no Dispatch created. Enter a classification by hand: rules recompute, the Ticket is dispatched. Restore the mode to `valid` afterwards.
+Set `FAKE_CLASSIFIER_MODE=invalid` in `.env` and run `docker compose up -d worker`. Submit any Request. After the repair attempt the Ticket lands in **needs review** with the raw output visible and no Dispatch created. Enter a classification by hand: rules recompute, the Ticket is dispatched. Afterwards set the mode back to `valid` in `.env` and run `docker compose up -d worker` again; the worker keeps the old setting until it is recreated.
 
 ## 6. Close (15 s)
 

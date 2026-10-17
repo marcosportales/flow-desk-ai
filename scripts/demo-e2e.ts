@@ -13,7 +13,7 @@ import { execFileSync } from "node:child_process";
 try {
   process.loadEnvFile(".env");
 } catch {
-  // No .env: fall back to the defaults below.
+  console.warn(".env not found in the current directory; using defaults");
 }
 
 const APP =
@@ -288,9 +288,9 @@ async function scenarioC(requesterId: string) {
 
 async function scenarioD(requesterId: string) {
   log("\nScenario D: invalid AI output");
-  compose("stop", "worker");
   const name = `flowdesk-e2e-worker-${RUN}`;
   try {
+    compose("stop", "worker");
     compose(
       "run",
       "-d",
@@ -301,6 +301,18 @@ async function scenarioD(requesterId: string) {
       "FAKE_CLASSIFIER_MODE=invalid",
       "worker",
     );
+    // `run -d` returns once the container starts, not once it claims jobs.
+    await waitFor("one-off worker healthy", async () => {
+      const health = execFileSync("docker", [
+        "inspect",
+        "-f",
+        "{{.State.Health.Status}}",
+        name,
+      ])
+        .toString()
+        .trim();
+      return health === "healthy";
+    });
     const description =
       "The monthly sales report shows incorrect data for the last quarter.";
     const id = await createTicket(
@@ -344,8 +356,11 @@ async function scenarioD(requesterId: string) {
     );
     assert(after.ticket.team === "data_team", "Team is data_team");
   } finally {
-    execFileSync("docker", ["rm", "-f", name], { stdio: "ignore" });
-    compose("start", "worker");
+    try {
+      execFileSync("docker", ["rm", "-f", name], { stdio: "ignore" });
+    } finally {
+      compose("start", "worker");
+    }
   }
 }
 
