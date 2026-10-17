@@ -1,9 +1,20 @@
 import { rejectUnlessAuthorized } from "@/infra/api/auth";
 import { errorResponse } from "@/infra/api/errors";
 import { getDb } from "@/infra/db/client";
+import type { tickets } from "@/infra/db/schema";
 import { createTicket } from "@/services/createTicket";
 
 export const dynamic = "force-dynamic";
+
+type Ticket = typeof tickets.$inferSelect;
+
+// Idempotency internals stay server-side.
+function publicTicket(ticket: Ticket) {
+  const rest: Partial<Ticket> = { ...ticket };
+  delete rest.requestHash;
+  delete rest.idempotencyKey;
+  return rest;
+}
 
 export async function POST(request: Request) {
   const unauthorized = rejectUnlessAuthorized(request);
@@ -31,9 +42,15 @@ export async function POST(request: Request) {
   const result = await createTicket(getDb(), { ...body, idempotencyKey });
   switch (result.kind) {
     case "created":
-      return Response.json({ ticket: result.ticket }, { status: 202 });
+      return Response.json(
+        { ticket: publicTicket(result.ticket) },
+        { status: 202 },
+      );
     case "replayed":
-      return Response.json({ ticket: result.ticket }, { status: 200 });
+      return Response.json(
+        { ticket: publicTicket(result.ticket) },
+        { status: 200 },
+      );
     case "conflict":
       return errorResponse(
         409,

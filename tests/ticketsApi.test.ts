@@ -64,6 +64,8 @@ describe("POST /api/tickets", () => {
     const a = await first.json();
     const b = await second.json();
     expect(a.ticket.id).toBe(b.ticket.id);
+    expect(a.ticket).not.toHaveProperty("requestHash");
+    expect(a.ticket).not.toHaveProperty("idempotencyKey");
     expect(a.ticket).toMatchObject({
       title: body.title,
       classificationState: "pending",
@@ -141,6 +143,7 @@ describe("GET /api/requesters", () => {
     const { requesters: list } = await res.json();
     expect(list.map((r: { id: string }) => r.id)).toContain(requester.id);
     expect(list[0]).toHaveProperty("name");
+    expect(list[0]).not.toHaveProperty("email");
   });
 
   it("returns 401 without the API key", async () => {

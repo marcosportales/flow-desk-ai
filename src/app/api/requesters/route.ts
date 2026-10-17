@@ -10,7 +10,11 @@ export async function GET(request: Request) {
   if (unauthorized) return unauthorized;
 
   const rows = await getDb()
-    .select()
+    .select({
+      id: requesters.id,
+      name: requesters.name,
+      department: requesters.department,
+    })
     .from(requesters)
     .orderBy(asc(requesters.name));
   return Response.json({ requesters: rows });
