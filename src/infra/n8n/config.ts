@@ -1,27 +1,44 @@
-import type { DispatchConfig } from "@/services/dispatchTicket";
+import { z } from "zod";
 
-type Env = Record<string, string | undefined>;
+export type DispatchConfig = {
+  webhookUrl: string;
+  // FLOWDESK_TO_N8N_SECRET; the callback has its own (N8N_TO_FLOWDESK_SECRET).
+  secret: string;
+  callbackUrl: string;
+  callbackTimeoutSeconds: number;
+};
 
-const DEFAULT_CALLBACK_URL = "http://app:3000/api/webhooks/n8n";
+// Empty values in .env count as unset.
+const blankToUndefined = (v: unknown) => (v === "" ? undefined : v);
 
-// Throws on a missing setting so the worker fails at start-up, not on the
+const envSchema = z.object({
+  N8N_WEBHOOK_URL: z.preprocess(blankToUndefined, z.url()),
+  FLOWDESK_TO_N8N_SECRET: z.preprocess(blankToUndefined, z.string()),
+  FLOWDESK_CALLBACK_URL: z.preprocess(
+    blankToUndefined,
+    z.url().default("http://app:3000/api/webhooks/n8n"),
+  ),
+  DISPATCH_CALLBACK_TIMEOUT_SECONDS: z.preprocess(
+    blankToUndefined,
+    z.coerce.number().int().positive().default(60),
+  ),
+});
+
+// Throws on bad configuration so the worker fails at start-up, not on the
 // first Dispatch.
-export function dispatchConfigFromEnv(env: Env): DispatchConfig {
-  const require = (name: string) => {
-    const value = env[name];
-    if (!value) throw new Error(`${name} is not set`);
-    return value;
-  };
-  const timeout = Number(env.DISPATCH_CALLBACK_TIMEOUT_SECONDS ?? 60);
-  if (!Number.isInteger(timeout) || timeout <= 0) {
+export function dispatchConfigFromEnv(
+  env: Record<string, string | undefined>,
+): DispatchConfig {
+  const parsed = envSchema.safeParse(env);
+  if (!parsed.success) {
     throw new Error(
-      "DISPATCH_CALLBACK_TIMEOUT_SECONDS must be a positive integer",
+      `Invalid dispatch configuration: ${z.prettifyError(parsed.error)}`,
     );
   }
   return {
-    webhookUrl: require("N8N_WEBHOOK_URL"),
-    secret: require("FLOWDESK_TO_N8N_SECRET"),
-    callbackUrl: env.FLOWDESK_CALLBACK_URL || DEFAULT_CALLBACK_URL,
-    callbackTimeoutSeconds: timeout,
+    webhookUrl: parsed.data.N8N_WEBHOOK_URL,
+    secret: parsed.data.FLOWDESK_TO_N8N_SECRET,
+    callbackUrl: parsed.data.FLOWDESK_CALLBACK_URL,
+    callbackTimeoutSeconds: parsed.data.DISPATCH_CALLBACK_TIMEOUT_SECONDS,
   };
 }

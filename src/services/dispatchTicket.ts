@@ -1,13 +1,14 @@
 import { eq, max, sql } from "drizzle-orm";
 import { formatTicketNumber } from "@/domain/ticketNumber";
 import { transitionDispatchStatus } from "@/domain/transitions";
-import { signBody } from "@/infra/crypto/hmac";
 import {
   dispatchAttempts,
   dispatches,
   ticketEvents,
   tickets,
 } from "@/infra/db/schema";
+import type { DispatchConfig } from "@/infra/n8n/config";
+import { sendDispatchEvent } from "@/infra/n8n/client";
 import type { Db } from "./createTicket";
 
 // Dispatch handler: docs/plan/IMPLEMENTATION.md §4.4, ADR 0005, ADR 0006.
@@ -15,53 +16,8 @@ import type { Db } from "./createTicket";
 // executes and reports back on the callback webhook.
 
 export const MAX_AUTO_ATTEMPTS = 3;
-const REQUEST_TIMEOUT_MS = 10_000;
-
-export type DispatchConfig = {
-  webhookUrl: string;
-  secret: string;
-  callbackUrl: string;
-  callbackTimeoutSeconds: number;
-};
 
 type DispatchJob = { dispatchId: string | null };
-
-type PostResult =
-  | { ok: true; httpStatus: number }
-  | { ok: false; httpStatus: number | null; error: string };
-
-async function post(
-  url: string,
-  secret: string,
-  body: string,
-): Promise<PostResult> {
-  try {
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        ...signBody(secret, body),
-      },
-      body,
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    });
-    await response.body?.cancel();
-    return response.ok
-      ? { ok: true, httpStatus: response.status }
-      : {
-          ok: false,
-          httpStatus: response.status,
-          error: `n8n answered HTTP ${response.status}`,
-        };
-  } catch (error) {
-    const cause = (error as { cause?: { message?: string } }).cause?.message;
-    return {
-      ok: false,
-      httpStatus: null,
-      error: [(error as Error).message, cause].filter(Boolean).join(": "),
-    };
-  }
-}
 
 export async function dispatchTicket(
   db: Db,
@@ -75,7 +31,7 @@ export async function dispatchTicket(
   // before this commits, and the callback's own lock then waits for `sent`
   // instead of finding the Dispatch still `pending`. It also stops a second
   // worker (after a reclaimed lease) from sending the same Dispatch twice.
-  const retry = await db.transaction(async (tx) => {
+  const leaveJobToRetry = await db.transaction(async (tx) => {
     const [dispatch] = await tx
       .select()
       .from(dispatches)
@@ -87,14 +43,15 @@ export async function dispatchTicket(
       .select()
       .from(tickets)
       .where(eq(tickets.id, dispatch.ticketId));
+    if (!ticket) throw new Error(`Ticket ${dispatch.ticketId} not found`);
 
     const body = JSON.stringify({
       dispatch_id: dispatch.id,
       ticket: {
-        id: ticket!.id,
-        number: formatTicketNumber(ticket!.number),
-        title: ticket!.title,
-        summary: ticket!.summary,
+        id: ticket.id,
+        number: formatTicketNumber(ticket.number),
+        title: ticket.title,
+        summary: ticket.summary,
       },
       category: dispatch.category,
       priority: dispatch.priority,
@@ -103,8 +60,12 @@ export async function dispatchTicket(
       callback_url: config.callbackUrl,
     });
     const startedAt = new Date();
-    const result = await post(config.webhookUrl, config.secret, body);
+    const result = await sendDispatchEvent(config, body);
     const outcome = result.ok ? "sent" : "failed";
+    const failure = {
+      httpStatus: result.httpStatus,
+      error: result.ok ? null : result.error,
+    };
 
     const [{ last }] = (await tx
       .select({ last: max(dispatchAttempts.attemptNo) })
@@ -118,8 +79,7 @@ export async function dispatchTicket(
       attemptNo,
       trigger: "auto",
       outcome,
-      httpStatus: result.httpStatus,
-      error: result.ok ? null : result.error,
+      ...failure,
       startedAt,
       finishedAt: new Date(),
     });
@@ -131,15 +91,16 @@ export async function dispatchTicket(
         dispatchId: dispatch.id,
         attemptNo,
         outcome,
-        httpStatus: result.httpStatus,
-        error: result.ok ? null : result.error,
+        ...failure,
       },
     });
 
     const autoAttempts = dispatch.autoAttempts + 1;
     const exhausted = !result.ok && autoAttempts >= MAX_AUTO_ATTEMPTS;
     const status = result.ok ? "sent" : exhausted ? "failed" : "pending";
-    if (status !== "pending") transitionDispatchStatus("pending", status);
+    if (status !== dispatch.status) {
+      transitionDispatchStatus(dispatch.status, status);
+    }
     await tx
       .update(dispatches)
       .set({
@@ -166,5 +127,6 @@ export async function dispatchTicket(
 
   // Committed above; the throw only makes the worker re-run the job with
   // backoff while the automatic budget lasts.
-  if (retry) throw new Error(`Dispatch ${dispatchId} not accepted by n8n`);
+  if (leaveJobToRetry)
+    throw new Error(`Dispatch ${dispatchId} not accepted by n8n`);
 }

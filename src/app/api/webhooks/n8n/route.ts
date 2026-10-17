@@ -1,10 +1,6 @@
 import { z } from "zod";
+import { rejectUnlessSigned } from "@/infra/api/auth";
 import { errorResponse } from "@/infra/api/errors";
-import {
-  SIGNATURE_HEADER,
-  TIMESTAMP_HEADER,
-  verifySignature,
-} from "@/infra/crypto/hmac";
 import { getDb } from "@/infra/db/client";
 import {
   DispatchCallback,
@@ -13,31 +9,12 @@ import {
 
 export const dynamic = "force-dynamic";
 
-// n8n's callback: authenticated by HMAC (N8N_TO_FLOWDESK_SECRET), not the
-// API key. IMPLEMENTATION.md §4.5.
+// n8n's callback: authenticated by HMAC, not the API key. IMPLEMENTATION.md §4.5.
 export async function POST(request: Request) {
-  const secret = process.env.N8N_TO_FLOWDESK_SECRET;
-  if (!secret) {
-    return errorResponse(500, "misconfigured", "Callback secret is not set");
-  }
-
   // Verified against the exact bytes n8n signed, before parsing.
   const body = await request.text();
-  const verified = verifySignature({
-    secret,
-    body,
-    timestamp: request.headers.get(TIMESTAMP_HEADER),
-    signature: request.headers.get(SIGNATURE_HEADER),
-  });
-  if (!verified.ok) {
-    return errorResponse(
-      401,
-      verified.reason,
-      verified.reason === "stale_timestamp"
-        ? "Missing timestamp or skew over 5 minutes"
-        : "Missing or invalid signature",
-    );
-  }
+  const unsigned = rejectUnlessSigned(request, body, "N8N_TO_FLOWDESK_SECRET");
+  if (unsigned) return unsigned;
 
   let json: unknown;
   try {

@@ -12,7 +12,8 @@ import {
 } from "@/infra/db/schema";
 import { classifyTicket } from "@/services/classifyTicket";
 import { createTicket } from "@/services/createTicket";
-import { type DispatchConfig, dispatchTicket } from "@/services/dispatchTicket";
+import type { DispatchConfig } from "@/infra/n8n/config";
+import { dispatchTicket } from "@/services/dispatchTicket";
 import { runNextJob } from "@/worker/runner";
 import type { TestDb } from "./db";
 
