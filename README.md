@@ -36,6 +36,20 @@ Slow modes hold the request for `SLOW_RESPONSE_MS` (default 15000).
 curl -X POST localhost:4000/admin/mode -H 'content-type: application/json' -d '{"mode":"fail_once"}'
 ```
 
+## Dispatch
+
+A classified, dispatchable Ticket gets a Dispatch, which the worker sends to n8n (`N8N_WEBHOOK_URL`) as an HMAC-signed event: `X-FlowDesk-Signature: sha256=HMAC(FLOWDESK_TO_N8N_SECRET, timestamp + "." + body)` with `X-FlowDesk-Timestamp`. n8n answers `202`, the Dispatch becomes `sent`, and it has `DISPATCH_CALLBACK_TIMEOUT_SECONDS` to report back. A non-2xx answer or a network error is a failed attempt; after 3 the Dispatch is `failed`.
+
+The workflow `n8n/workflows/flowdesk-dispatch.json` verifies the signature, validates the event, picks the Team's channel, prefixes `[URGENT]` on the Urgent Route, and delivers to the notifier with `Idempotency-Key = dispatch_id` (no retries in n8n). It then calls `POST /api/webhooks/n8n` (`FLOWDESK_CALLBACK_URL`), signed the same way with `N8N_TO_FLOWDESK_SECRET`. The callback is rejected with `401` on a bad signature or a timestamp more than 5 minutes off; a callback for an already-settled Dispatch is recorded on the timeline and changes nothing.
+
+`n8n-import` imports and publishes the workflow on n8n's first start only. To load an edited workflow into an existing stack:
+
+```sh
+docker compose stop n8n
+docker compose run --rm --entrypoint rm n8n-import -f /home/node/.n8n/.flowdesk-workflows-imported
+docker compose run --rm n8n-import && docker compose up -d n8n
+```
+
 ## Classification
 
 The worker classifies each Ticket with the Classifier chosen by `CLASSIFIER`:

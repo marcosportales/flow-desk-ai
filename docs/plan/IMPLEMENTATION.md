@@ -221,7 +221,7 @@ Partial unique index: at most one non-terminal Dispatch per Ticket: `unique (tic
 | trigger | enum(`auto`,`manual`,`reconcile`) | |
 | outcome | enum(`sent`,`succeeded`,`failed`,`unknown`) | |
 | http_status | int null | |
-| n8n_execution_id | text null | from callback |
+| n8n_execution_id | text null | from callback; the callback settles the in-flight (latest) attempt's `outcome`, `error`, `finished_at`. Earlier attempts are never touched |
 | error | text null | |
 | started_at / finished_at | timestamptz | |
 
@@ -245,7 +245,7 @@ Partial unique index: `unique (kind, ticket_id, coalesce(dispatch_id, '00000000-
 |---|---|---|
 | id | bigint identity pk | ordering |
 | ticket_id | uuid fk not null | index `(ticket_id, id)` |
-| type | text not null | `ticket_created`, `classification_attempted`, `classified`, `sent_to_review`, `priority_computed`, `priority_overridden`, `dispatch_created`, `dispatch_attempted`, `dispatch_succeeded`, `dispatch_failed`, `dispatch_unknown`, `dispatch_reconciled`, `dispatch_retry_requested`, `status_changed` |
+| type | text not null | `ticket_created`, `classification_attempted`, `classified`, `sent_to_review`, `priority_computed`, `priority_overridden`, `dispatch_created`, `dispatch_attempted`, `dispatch_succeeded`, `dispatch_failed`, `dispatch_unknown`, `dispatch_reconciled`, `dispatch_retry_requested`, `dispatch_callback_ignored` (a callback for a Dispatch that was not `sent`/`unknown`: duplicates), `status_changed` |
 | actor | enum(`system`,`ai`,`human`,`n8n`) | |
 | data | jsonb not null | |
 
@@ -325,7 +325,7 @@ A separate tick (every 10s) finds `sent` Dispatches past `callback_deadline`, ma
 6. **Code: build callback**: outcome from step 5, `$execution.id`, HMAC with `$env.N8N_TO_FLOWDESK_SECRET`.
 7. **HTTP Request → app callback**.
 
-n8n needs `N8N_BLOCK_ENV_ACCESS_IN_NODE=false` (or explicitly allowed env vars) so Code nodes can read the secrets. Check the pinned version's setting name during implementation.
+n8n needs `N8N_BLOCK_ENV_ACCESS_IN_NODE=false` (or explicitly allowed env vars) so Code nodes can read the secrets. Confirmed on the pinned `n8nio/n8n:2.43.7` (Code nodes run in the task runner): `N8N_BLOCK_ENV_ACCESS_IN_NODE=false` gives `$env` access, and `NODE_FUNCTION_ALLOW_BUILTIN=crypto` is also required for `require('crypto')`. On Webhook v2 the 202 is set under `options.responseCode`. `import:workflow` leaves workflows unpublished in regular mode (`--activeState=fromJson` needs queue mode), so `n8n-import` runs `n8n publish:workflow --id=…` after importing.
 
 ## 6. Simulated notifier (`services/notifier`)
 
