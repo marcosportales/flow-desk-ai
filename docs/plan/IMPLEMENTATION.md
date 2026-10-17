@@ -121,7 +121,7 @@ The prompt asks for JSON only and includes the allowed values. Use `response_for
 |------|--------|-------------|
 | Ticket Status | `open`, `resolved`, `closed` | open→resolved→closed; resolved→open (reopen) |
 | Classification State | `pending`, `classified`, `needs_review` | pending→classified; pending→needs_review; needs_review→classified (manual or re-run); classified→classified (manual correction) |
-| Dispatch Status | `pending`, `sent`, `succeeded`, `failed`, `unknown` | pending→sent→succeeded / failed; sent→unknown (callback deadline passed); unknown→succeeded / failed (Reconciliation); failed→pending (retry, same Dispatch) |
+| Dispatch Status | `pending`, `sent`, `succeeded`, `failed`, `unknown` | pending→sent→succeeded / failed; pending→failed (n8n never accepted it and the auto-retry budget ran out, §4.4); sent→unknown (callback deadline passed); unknown→succeeded / failed (Reconciliation); failed→pending (retry, same Dispatch) |
 
 Transitions live in `src/domain/transitions.ts` as explicit functions that throw on illegal moves. They are unit-tested.
 
