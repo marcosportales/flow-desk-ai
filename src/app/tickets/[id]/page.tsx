@@ -313,12 +313,7 @@ export default async function TicketDetailPage({
                   {e.actor} · {when(e.createdAt)}
                 </span>
               </div>
-              <details>
-                <summary className="cursor-pointer text-xs text-slate-500">
-                  Data
-                </summary>
-                <Json value={e.data} />
-              </details>
+              <Json value={e.data} />
             </li>
           ))}
         </ol>
