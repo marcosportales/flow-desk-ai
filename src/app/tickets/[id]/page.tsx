@@ -6,6 +6,7 @@ import { formatTicketNumber } from "@/domain/ticketNumber";
 import { getDb } from "@/infra/db/client";
 import { getTicketDetail } from "@/services/getTicketDetail";
 import { AutoRefresh } from "./AutoRefresh";
+import { ManualActions } from "./ManualActions";
 
 export const dynamic = "force-dynamic";
 
@@ -87,6 +88,11 @@ export default async function TicketDetailPage({
     settled,
   } = result.detail;
   const overridden = ticket.priorityOverrideReason !== null;
+  const latestDispatch = dispatches.at(-1);
+  const failedDispatchId =
+    latestDispatch?.status === "failed" && !latestDispatch.supersededBy
+      ? latestDispatch.id
+      : null;
 
   return (
     <main className="mx-auto max-w-5xl space-y-6 p-6">
@@ -245,6 +251,9 @@ export default async function TicketDetailPage({
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-mono">#{d.sequence}</span>
                 <Badge value={d.status} />
+                {d.supersededBy && (
+                  <span className="text-xs text-slate-500">superseded</span>
+                )}
                 <span>
                   {label(d.category)} · {d.priority} · {label(d.team)} ·{" "}
                   {d.route} route
@@ -298,6 +307,16 @@ export default async function TicketDetailPage({
             </div>
           ))
         )}
+      </Section>
+
+      <Section title="Manual actions">
+        <ManualActions
+          ticketId={ticket.id}
+          ticketStatus={ticket.status}
+          classificationState={ticket.classificationState}
+          priority={ticket.priority}
+          failedDispatchId={failedDispatchId}
+        />
       </Section>
 
       <Section title="Timeline">
