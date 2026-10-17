@@ -2,7 +2,9 @@ import { randomUUID } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import { classifierFromEnv } from "@/infra/classifier";
 import { getDb, getSql } from "@/infra/db/client";
+import { dispatchConfigFromEnv } from "@/infra/n8n/config";
 import { classifyTicket } from "@/services/classifyTicket";
+import { dispatchTicket } from "@/services/dispatchTicket";
 import {
   exponentialBackoffMs,
   type Handlers,
@@ -15,14 +17,16 @@ const TICK_MS = 10_000;
 // Touched every loop; the compose healthcheck reads its mtime.
 const HEARTBEAT_FILE = "/tmp/worker-heartbeat";
 
-// Fails at start-up on a bad CLASSIFIER / LLM_* configuration.
+// Fail at start-up on a bad CLASSIFIER / LLM_* / n8n configuration.
 const classifier = classifierFromEnv(process.env);
+const dispatchConfig = dispatchConfigFromEnv(process.env);
 const db = getDb();
 
-// Registered as they land (dispatch: SCRUM-13). The worker only claims kinds
+// Registered as they land (reconcile: SCRUM-14). The worker only claims kinds
 // that have a handler, so jobs of the others wait in the queue untouched.
 const handlers: Handlers = {
   classify: (job) => classifyTicket(db, classifier, job),
+  dispatch: (job) => dispatchTicket(db, dispatchConfig, job),
 };
 
 // Classify retries after a provider error: 2s, 8s, 30s (IMPLEMENTATION.md §2.5).

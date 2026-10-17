@@ -1,0 +1,287 @@
+{
+  "id": "FlowDeskDispatch1",
+  "name": "FlowDesk Dispatch",
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "all",
+    "saveDataErrorExecution": "all",
+    "saveManualExecutions": true
+  },
+  "nodes": [
+    {
+      "id": "6b1d3c1e-0f0a-4a51-9f3e-000000000001",
+      "name": "Dispatch webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [0, 300],
+      "webhookId": "5d3f7c2a-8a51-4c43-9d7e-2f2a6f0e9b01",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "flowdesk-dispatch",
+        "responseMode": "onReceived",
+        "options": {
+          "rawBody": true,
+          "responseCode": { "values": { "responseCode": "customCode", "customCode": 202 } }
+        }
+      }
+    },
+    {
+      "id": "6b1d3c1e-0f0a-4a51-9f3e-000000000002",
+      "name": "Verify signature",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 300],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// HMAC-SHA256 over `timestamp.rawBody` with FLOWDESK_TO_N8N_SECRET\n// (IMPLEMENTATION.md §4.4). A mismatch throws: the execution fails and\n// no callback is sent.\nconst crypto = require('crypto');\nconst item = $input.first();\nconst headers = item.json.headers;\nconst timestamp = headers['x-flowdesk-timestamp'];\nconst signature = headers['x-flowdesk-signature'] || '';\nconst raw = Buffer.from(item.binary.data.data, 'base64').toString('utf8');\n\nconst seconds = Number(timestamp);\nif (!Number.isInteger(seconds) || Math.abs(Date.now() - seconds * 1000) > 5 * 60 * 1000) {\n  throw new Error('stale or missing timestamp');\n}\nconst expected = 'sha256=' + crypto\n  .createHmac('sha256', $env.FLOWDESK_TO_N8N_SECRET)\n  .update(timestamp + '.' + raw)\n  .digest('hex');\nconst a = Buffer.from(signature);\nconst b = Buffer.from(expected);\nif (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {\n  throw new Error('bad signature');\n}\nreturn [{ json: JSON.parse(raw) }];\n"
+      }
+    },
+    {
+      "id": "6b1d3c1e-0f0a-4a51-9f3e-000000000003",
+      "name": "Validate payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 300],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// The app has already decided everything; this only rejects a malformed\n// event before any side effect.\nconst e = $input.first().json;\nconst oneOf = (value, allowed, field) => {\n  if (!allowed.includes(value)) throw new Error(`invalid ${field}: ${value}`);\n};\nfor (const field of ['dispatch_id', 'callback_url']) {\n  if (typeof e[field] !== 'string' || e[field] === '') throw new Error(`missing ${field}`);\n}\nif (!e.ticket || typeof e.ticket.number !== 'string' || typeof e.ticket.title !== 'string') {\n  throw new Error('missing ticket');\n}\noneOf(e.category, ['erp', 'access', 'data'], 'category');\noneOf(e.priority, ['urgent', 'high', 'normal', 'low'], 'priority');\noneOf(e.team, ['it_systems', 'identity_access', 'data_team'], 'team');\noneOf(e.route, ['standard', 'urgent'], 'route');\nreturn [{ json: e }];\n"
+      }
+    },
+    {
+      "id": "6b1d3c1e-0f0a-4a51-9f3e-000000000004",
+      "name": "Switch on Team",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [660, 300],
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2 },
+                "conditions": [
+                  {
+                    "id": "a1000000-0000-4000-8000-000000000001",
+                    "leftValue": "={{ $json.team }}",
+                    "rightValue": "it_systems",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "it_systems"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2 },
+                "conditions": [
+                  {
+                    "id": "a1000000-0000-4000-8000-000000000002",
+                    "leftValue": "={{ $json.team }}",
+                    "rightValue": "identity_access",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "identity_access"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2 },
+                "conditions": [
+                  {
+                    "id": "a1000000-0000-4000-8000-000000000003",
+                    "leftValue": "={{ $json.team }}",
+                    "rightValue": "data_team",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "data_team"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "6b1d3c1e-0f0a-4a51-9f3e-000000000005",
+      "name": "IT Systems message",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [880, 100],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "b1000000-0000-4000-8000-000000000001", "name": "channel", "value": "#it-systems", "type": "string" },
+            { "id": "b1000000-0000-4000-8000-000000000002", "name": "message", "value": "={{ $json.ticket.number }} {{ $json.ticket.title }}: {{ $json.ticket.summary }} (priority {{ $json.priority }})", "type": "string" }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      }
+    },
+    {
+      "id": "6b1d3c1e-0f0a-4a51-9f3e-000000000006",
+      "name": "Identity & Access message",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [880, 300],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "b1000000-0000-4000-8000-000000000003", "name": "channel", "value": "#identity-access", "type": "string" },
+            { "id": "b1000000-0000-4000-8000-000000000004", "name": "message", "value": "={{ $json.ticket.number }} {{ $json.ticket.title }}: {{ $json.ticket.summary }} (priority {{ $json.priority }})", "type": "string" }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      }
+    },
+    {
+      "id": "6b1d3c1e-0f0a-4a51-9f3e-000000000007",
+      "name": "Data Team message",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [880, 500],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "b1000000-0000-4000-8000-000000000005", "name": "channel", "value": "#data-team", "type": "string" },
+            { "id": "b1000000-0000-4000-8000-000000000006", "name": "message", "value": "={{ $json.ticket.number }} {{ $json.ticket.title }}: {{ $json.ticket.summary }} (priority {{ $json.priority }})", "type": "string" }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      }
+    },
+    {
+      "id": "6b1d3c1e-0f0a-4a51-9f3e-000000000008",
+      "name": "Urgent Route?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1100, 300],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2 },
+          "conditions": [
+            {
+              "id": "c1000000-0000-4000-8000-000000000001",
+              "leftValue": "={{ $json.route }}",
+              "rightValue": "urgent",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "6b1d3c1e-0f0a-4a51-9f3e-000000000009",
+      "name": "Urgent message",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1320, 200],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "b1000000-0000-4000-8000-000000000007", "name": "channel", "value": "={{ $json.channel }}-urgent", "type": "string" },
+            { "id": "b1000000-0000-4000-8000-000000000008", "name": "message", "value": "=[URGENT] {{ $json.message }}", "type": "string" }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      }
+    },
+    {
+      "id": "6b1d3c1e-0f0a-4a51-9f3e-000000000010",
+      "name": "Deliver to notifier",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1540, 300],
+      "onError": "continueRegularOutput",
+      "retryOnFail": false,
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.NOTIFIER_URL }}/deliveries",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "Idempotency-Key", "value": "={{ $json.dispatch_id }}" }]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ channel: $json.channel, message: $json.message }) }}",
+        "options": {
+          "timeout": 10000,
+          "response": { "response": { "fullResponse": true, "neverError": true } }
+        }
+      }
+    },
+    {
+      "id": "6b1d3c1e-0f0a-4a51-9f3e-000000000011",
+      "name": "Build callback",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1760, 300],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Reports the delivery outcome, signed with N8N_TO_FLOWDESK_SECRET\n// (IMPLEMENTATION.md §4.5). Retries are the app's job (ADR 0006).\nconst crypto = require('crypto');\nconst event = $('Validate payload').first().json;\nconst res = $input.first().json;\nconst status = res.statusCode;\nconst ok = !res.error && status >= 200 && status < 300;\nlet error = null;\nif (!ok) {\n  error = res.error\n    ? String(res.error.message || JSON.stringify(res.error))\n    : `notifier answered HTTP ${status}`;\n}\nconst body = JSON.stringify({\n  dispatch_id: event.dispatch_id,\n  outcome: ok ? 'succeeded' : 'failed',\n  error,\n  n8n_execution_id: String($execution.id),\n  delivered_at: ok ? (res.body && res.body.received_at) || new Date().toISOString() : null,\n});\nconst timestamp = String(Math.floor(Date.now() / 1000));\nconst signature = 'sha256=' + crypto\n  .createHmac('sha256', $env.N8N_TO_FLOWDESK_SECRET)\n  .update(timestamp + '.' + body)\n  .digest('hex');\nreturn [{ json: { callback_url: event.callback_url, body, timestamp, signature } }];\n"
+      }
+    },
+    {
+      "id": "6b1d3c1e-0f0a-4a51-9f3e-000000000012",
+      "name": "Callback to app",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1980, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.callback_url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-FlowDesk-Timestamp", "value": "={{ $json.timestamp }}" },
+            { "name": "X-FlowDesk-Signature", "value": "={{ $json.signature }}" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.body }}",
+        "options": { "timeout": 30000 }
+      }
+    }
+  ],
+  "connections": {
+    "Dispatch webhook": { "main": [[{ "node": "Verify signature", "type": "main", "index": 0 }]] },
+    "Verify signature": { "main": [[{ "node": "Validate payload", "type": "main", "index": 0 }]] },
+    "Validate payload": { "main": [[{ "node": "Switch on Team", "type": "main", "index": 0 }]] },
+    "Switch on Team": {
+      "main": [
+        [{ "node": "IT Systems message", "type": "main", "index": 0 }],
+        [{ "node": "Identity & Access message", "type": "main", "index": 0 }],
+        [{ "node": "Data Team message", "type": "main", "index": 0 }]
+      ]
+    },
+    "IT Systems message": { "main": [[{ "node": "Urgent Route?", "type": "main", "index": 0 }]] },
+    "Identity & Access message": { "main": [[{ "node": "Urgent Route?", "type": "main", "index": 0 }]] },
+    "Data Team message": { "main": [[{ "node": "Urgent Route?", "type": "main", "index": 0 }]] },
+    "Urgent Route?": {
+      "main": [
+        [{ "node": "Urgent message", "type": "main", "index": 0 }],
+        [{ "node": "Deliver to notifier", "type": "main", "index": 0 }]
+      ]
+    },
+    "Urgent message": { "main": [[{ "node": "Deliver to notifier", "type": "main", "index": 0 }]] },
+    "Deliver to notifier": { "main": [[{ "node": "Build callback", "type": "main", "index": 0 }]] },
+    "Build callback": { "main": [[{ "node": "Callback to app", "type": "main", "index": 0 }]] }
+  },
+  "pinData": {}
+}
