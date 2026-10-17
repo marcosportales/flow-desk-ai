@@ -1,6 +1,7 @@
 "use client";
 
-import { type ReactNode, useActionState } from "react";
+import { useRouter } from "next/navigation";
+import { type ReactNode, useActionState, useEffect } from "react";
 import { AlertCircleIcon, CheckCircle2Icon } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -59,6 +60,12 @@ function ActionForm({
   children?: ReactNode;
 }) {
   const [state, run, pending] = useActionState(action, idle);
+  const router = useRouter();
+  // The action's result alone doesn't repaint the server-rendered badges and
+  // timeline, so re-fetch the page once the action succeeds.
+  useEffect(() => {
+    if (state.status === "ok") router.refresh();
+  }, [state, router]);
   return (
     <form action={run}>
       <Card size="sm">
