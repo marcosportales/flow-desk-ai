@@ -15,42 +15,31 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+import { categories, impactScopes } from "../../domain/classification";
+import { priorities } from "../../domain/priority";
+import { routes, teams } from "../../domain/routing";
+import {
+  classificationStates,
+  dispatchStatuses,
+  ticketStatuses,
+} from "../../domain/transitions";
 
 // Data model: docs/plan/IMPLEMENTATION.md §3.
+// Enums the domain reasons about take their values from src/domain.
 
-export const ticketStatus = pgEnum("ticket_status", [
-  "open",
-  "resolved",
-  "closed",
-]);
-export const classificationState = pgEnum("classification_state", [
-  "pending",
-  "classified",
-  "needs_review",
-]);
-export const category = pgEnum("category", [
-  "erp",
-  "access",
-  "data",
-  "inquiry",
-  "other",
-]);
-export const impactScope = pgEnum("impact_scope", [
-  "individual",
-  "team",
-  "organization",
-]);
+export const ticketStatus = pgEnum("ticket_status", ticketStatuses);
+export const classificationState = pgEnum(
+  "classification_state",
+  classificationStates,
+);
+export const category = pgEnum("category", categories);
+export const impactScope = pgEnum("impact_scope", impactScopes);
 export const classificationSource = pgEnum("classification_source", [
   "ai",
   "human",
 ]);
-export const priority = pgEnum("priority", ["low", "normal", "high", "urgent"]);
-export const team = pgEnum("team", [
-  "it_systems",
-  "identity_access",
-  "data_team",
-  "service_desk",
-]);
+export const priority = pgEnum("priority", priorities);
+export const team = pgEnum("team", teams);
 export const classificationAttemptKind = pgEnum("classification_attempt_kind", [
   "initial",
   "repair",
@@ -61,14 +50,8 @@ export const classificationOutcome = pgEnum("classification_outcome", [
   "invalid_output",
   "provider_error",
 ]);
-export const route = pgEnum("route", ["standard", "urgent"]);
-export const dispatchStatus = pgEnum("dispatch_status", [
-  "pending",
-  "sent",
-  "succeeded",
-  "failed",
-  "unknown",
-]);
+export const route = pgEnum("route", routes);
+export const dispatchStatus = pgEnum("dispatch_status", dispatchStatuses);
 export const dispatchTrigger = pgEnum("dispatch_trigger", [
   "auto",
   "manual",

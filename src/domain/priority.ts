@@ -1,15 +1,14 @@
-import type { Category, ImpactScope } from "./classification";
+import type { Classification } from "./classification";
 
 // Priority Rules: docs/plan/IMPLEMENTATION.md §2.3, ADR 0001.
 
 export const priorities = ["low", "normal", "high", "urgent"] as const;
 export type Priority = (typeof priorities)[number];
 
-export type PriorityFacts = {
-  category: Category;
-  blocks_work: boolean;
-  impact_scope: ImpactScope;
-};
+export type PriorityFacts = Pick<
+  Classification,
+  "category" | "blocks_work" | "impact_scope"
+>;
 
 type PriorityRule = {
   name: string;

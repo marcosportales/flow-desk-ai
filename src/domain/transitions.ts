@@ -19,9 +19,12 @@ export const dispatchStatuses = [
 ] as const;
 export type DispatchStatus = (typeof dispatchStatuses)[number];
 
+export type StatusAxis =
+  "Ticket Status" | "Classification State" | "Dispatch Status";
+
 export class IllegalTransitionError extends Error {
   constructor(
-    readonly axis: string,
+    readonly axis: StatusAxis,
     readonly from: string,
     readonly to: string,
   ) {
@@ -33,7 +36,7 @@ export class IllegalTransitionError extends Error {
 type Moves<S extends string> = Record<S, readonly S[]>;
 
 function transition<S extends string>(
-  axis: string,
+  axis: StatusAxis,
   moves: Moves<S>,
   from: S,
   to: S,
@@ -74,7 +77,8 @@ export function transitionClassificationState(
 
 // pending → failed: n8n never accepted it and the auto-retry budget ran out
 // (§4.4). unknown only settles through Reconciliation or a late callback.
-// failed → pending is a retry of the same Dispatch.
+// failed → pending is a retry of the same Dispatch, automatic (budget left)
+// or manual.
 const dispatchStatusMoves: Moves<DispatchStatus> = {
   pending: ["sent", "failed"],
   sent: ["succeeded", "failed", "unknown"],

@@ -1,13 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { evaluatePriority, type PriorityFacts } from "@/domain/priority";
+import {
+  evaluatePriority,
+  type Priority,
+  type PriorityFacts,
+  type PriorityRuleName,
+} from "@/domain/priority";
 
 describe("evaluatePriority", () => {
   // Expected values come straight from IMPLEMENTATION.md §2.3.
   it.each<{
     name: string;
     facts: PriorityFacts;
-    priority: string;
-    rule: string;
+    priority: Priority;
+    rule: PriorityRuleName;
   }>([
     // Each rule on its own.
     {
