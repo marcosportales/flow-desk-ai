@@ -14,6 +14,7 @@ import { classifyTicket } from "@/services/classifyTicket";
 import { createTicket } from "@/services/createTicket";
 import type { DispatchConfig } from "@/infra/n8n/config";
 import { dispatchTicket } from "@/services/dispatchTicket";
+import { reconcileDispatch } from "@/services/reconcileDispatch";
 import { runNextJob } from "@/worker/runner";
 import type { TestDb } from "./db";
 
@@ -77,6 +78,18 @@ export function dispatchFixtures(db: TestDb, sql: Sql) {
       ticketIds: [ticketId],
     });
 
+  // Runs the Ticket's next reconcile job through the real worker loop.
+  const runReconcile = (ticketId: string, notifierUrl: string) =>
+    runNextJob({
+      sql,
+      workerId: `test-${randomUUID()}`,
+      handlers: {
+        reconcile: (job) => reconcileDispatch(db, { notifierUrl }, job),
+      },
+      backoffMs: () => 0,
+      ticketIds: [ticketId],
+    });
+
   async function snapshot(ticketId: string) {
     const [dispatch] = await db
       .select()
@@ -106,5 +119,5 @@ export function dispatchFixtures(db: TestDb, sql: Sql) {
     };
   }
 
-  return { classifiedTicket, runDispatch, snapshot };
+  return { classifiedTicket, runDispatch, runReconcile, snapshot };
 }

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { transitionDispatchStatus } from "@/domain/transitions";
 import { dispatchAttempts, dispatches, ticketEvents } from "@/infra/db/schema";
 import type { Db } from "./createTicket";
+import { failDispatch } from "./failDispatch";
 
 // n8n's report on a Dispatch: docs/plan/IMPLEMENTATION.md §4.5.
 
@@ -48,11 +49,15 @@ export async function recordDispatchCallback(
       return { kind: "ignored" };
     }
 
-    transitionDispatchStatus(dispatch.status, callback.outcome);
-    await tx
-      .update(dispatches)
-      .set({ status: callback.outcome })
-      .where(eq(dispatches.id, dispatch.id));
+    if (callback.outcome === "failed") {
+      await failDispatch(tx, dispatch);
+    } else {
+      transitionDispatchStatus(dispatch.status, "succeeded");
+      await tx
+        .update(dispatches)
+        .set({ status: "succeeded" })
+        .where(eq(dispatches.id, dispatch.id));
+    }
     // The callback reports on the attempt that is in flight, the latest one.
     const [attempt] = await tx
       .select({ id: dispatchAttempts.id })
