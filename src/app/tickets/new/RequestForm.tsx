@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useActionState } from "react";
 import { AlertCircleIcon, CheckCircle2Icon } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -33,15 +34,28 @@ export function RequestForm({ requesters, idempotencyKey }: Props) {
     { status: "idle" },
   );
 
+  const router = useRouter();
+
   if (state.status === "created") {
     return (
       <Alert role="status">
         <CheckCircle2Icon />
         <AlertTitle>Ticket #{state.ticketNumber} created.</AlertTitle>
         <AlertDescription>
-          <Link href="/tickets/new" className="underline">
-            Submit another Request
-          </Link>
+          <div className="flex gap-4">
+            <Link href={`/tickets/${state.ticketId}`} className="underline">
+              View ticket
+            </Link>
+            {/* Same-URL <Link> is a no-op; refreshing re-renders the page with
+                a new idempotency key, which remounts the form. */}
+            <button
+              type="button"
+              className="underline"
+              onClick={() => router.refresh()}
+            >
+              Submit another Request
+            </button>
+          </div>
         </AlertDescription>
       </Alert>
     );
