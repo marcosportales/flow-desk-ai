@@ -22,7 +22,8 @@ export async function retryDispatch(
       .where(eq(dispatches.id, dispatchId))
       .for("update");
     if (!dispatch) return { kind: "not_found" };
-    if (dispatch.status !== "failed") {
+    // A superseded Dispatch is history; its replacement is the one to retry.
+    if (dispatch.status !== "failed" || dispatch.supersededBy) {
       return { kind: "not_retryable", status: dispatch.status };
     }
 

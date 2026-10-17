@@ -2,7 +2,7 @@ import { eq, max } from "drizzle-orm";
 import { z } from "zod";
 import { Classification } from "@/domain/classification";
 import { evaluatePriority } from "@/domain/priority";
-import { isDispatchable, routeFor, teamFor } from "@/domain/routing";
+import { isDispatchable, teamFor } from "@/domain/routing";
 import { transitionClassificationState } from "@/domain/transitions";
 import {
   type Classifier,
@@ -11,12 +11,11 @@ import {
 } from "@/infra/classifier/types";
 import {
   classificationAttempts,
-  dispatches,
-  jobs,
   ticketEvents,
   tickets,
 } from "@/infra/db/schema";
 import type { Db } from "./createTicket";
+import { createDispatch } from "./dispatchRouting";
 
 // Classify handler: docs/plan/IMPLEMENTATION.md §2.5, §4.3. Invalid or
 // unavailable AI never triggers actions (Scenario D): the Ticket goes to
@@ -278,31 +277,9 @@ async function applyClassification(
     return;
   }
 
-  const [{ last }] = (await tx
-    .select({ last: max(dispatches.sequence) })
-    .from(dispatches)
-    .where(eq(dispatches.ticketId, ticket.id))) as [{ last: number | null }];
-  const route = routeFor(evaluation.priority);
-  const [dispatch] = await tx
-    .insert(dispatches)
-    .values({
-      ticketId: ticket.id,
-      sequence: (last ?? 0) + 1,
-      category: facts.category,
-      priority: evaluation.priority,
-      team,
-      route,
-    })
-    .returning();
-  await tx.insert(ticketEvents).values({
-    ticketId: ticket.id,
-    type: "dispatch_created",
-    actor: "system",
-    data: { dispatchId: dispatch!.id, route, team },
-  });
-  await tx.insert(jobs).values({
-    kind: "dispatch",
-    ticketId: ticket.id,
-    dispatchId: dispatch!.id,
+  await createDispatch(tx, ticket.id, {
+    category: facts.category,
+    priority: evaluation.priority,
+    team,
   });
 }
