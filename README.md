@@ -1,17 +1,109 @@
-# flow-desk-ai
+# FlowDesk AI
+
+Turns internal business requests into structured, traceable Tickets. An AI reads each Request and extracts facts; deterministic rules decide Priority and Team; an n8n workflow delivers the notification; the app records every step so you can see what happened and why, including when an integration fails.
+
+Terms (Request, Ticket, Dispatch, Route, …) are defined in [GLOSSARY.md](GLOSSARY.md).
 
 ## Quick start
 
+Requires Docker with Compose, and Node 24 + pnpm for `pnpm demo:e2e`. No API keys are needed: the default Classifier is a deterministic fake.
+
 ```sh
 cp .env.example .env
-docker compose up
+docker compose up -d      # first start builds the image and imports the n8n workflow
+pnpm install
+pnpm demo:e2e             # Scenarios A–D against the live stack
 ```
 
 - App: http://localhost:3000 (`GET /api/health` checks DB connectivity)
-- n8n: http://localhost:5678
+- n8n: http://localhost:5678 (executions of the dispatch workflow; create the owner account on first visit)
 - Notifier: http://localhost:4000 (received-messages page)
 
-Host ports can be overridden in `.env` (`APP_HOST_PORT`, `N8N_HOST_PORT`, `NOTIFIER_HOST_PORT`, `POSTGRES_HOST_PORT`).
+Host ports can be overridden in `.env` (`APP_HOST_PORT`, `N8N_HOST_PORT`, `NOTIFIER_HOST_PORT`, `POSTGRES_HOST_PORT`); `pnpm demo:e2e` reads them. `pnpm demo:e2e` also honours `E2E_APP_URL` and `E2E_NOTIFIER_URL`.
+
+For a guided tour, follow the [demo script](docs/demo.md) (about 4 minutes). The HTTP API is documented in [docs/api.md](docs/api.md).
+
+## Architecture
+
+```
+             ┌──────────────┐  POST /api/tickets (Idempotency-Key)
+ Requester ─►│  Next.js app │──────────────┐
+  (UI/API)   │  (UI + API)  │              ▼
+             └──────┬───────┘      ┌──────────────┐
+                    │ reads        │  PostgreSQL  │◄────────┐
+                    ▼              │  app DB      │         │ claims jobs
+             ┌──────────────┐      │  (+ n8n DB)  │  ┌──────┴──────┐
+             │  Dashboard   │      └──────────────┘  │   Worker    │──► LLM (OpenAI-compatible)
+             └──────────────┘              ▲         └──────┬──────┘
+                                           │ callback       │ signed Dispatch event
+                                           │ (HMAC)         ▼
+                                    ┌──────┴───────────────────┐
+                                    │           n8n            │
+                                    │ verify → switch Team/    │
+                                    │ Urgent Route → deliver   │
+                                    └──────────────┬───────────┘
+                                                   │ Idempotency-Key = dispatch_id
+                                                   ▼
+                                    ┌──────────────────────────┐
+                                    │ Simulated notification   │
+                                    │ service (failure modes)  │
+                                    └──────────────────────────┘
+```
+
+| Compose service | Purpose |
+| --- | --- |
+| `postgres` | Databases `flowdesk` (app) and `n8n` |
+| `migrate` | One-shot: migrations and idempotent demo data |
+| `app` | Next.js UI, public API and the n8n callback webhook |
+| `worker` | Claims jobs from a Postgres table: classify, dispatch, reconcile |
+| `n8n`, `n8n-import` | Runs the dispatch workflow; the one-shot imports it on first start |
+| `notifier` | Simulated notification target with failure modes |
+
+Code layout: `src/domain` (pure rules, no I/O), `src/services` (use cases, called by both Route Handlers and Server Actions), `src/infra` (database, Classifier, n8n client, HMAC), `src/worker`, `services/notifier`, `n8n/workflows`. The full design is in [docs/plan/IMPLEMENTATION.md](docs/plan/IMPLEMENTATION.md).
+
+## Design decisions
+
+Recorded as ADRs in [docs/adr/](docs/adr/):
+
+| ADR | Decision |
+| --- | --- |
+| [0001](docs/adr/0001-ai-extracts-facts-rules-decide.md) | AI extracts facts; deterministic rules decide Priority and Team |
+| [0002](docs/adr/0002-long-running-local-first-deployment.md) | Local-first, long-running deployment via Docker Compose |
+| [0003](docs/adr/0003-openai-compatible-llm-provider.md) | OpenAI-compatible LLM provider behind a Classifier interface |
+| [0004](docs/adr/0004-background-processing-via-postgres-jobs.md) | Background processing via a Postgres job table and a worker |
+| [0005](docs/adr/0005-app-decides-n8n-executes.md) | The app decides; n8n executes and reports back |
+| [0006](docs/adr/0006-reconcile-before-retry.md) | Reconcile before retry; the worker is the only retry owner |
+
+In short: a lost HTTP response is never treated as a failed operation. Each Dispatch has one id used as the idempotency key from the app through n8n to the notifier, so a retry cannot deliver twice, and an unconfirmed Dispatch is checked against the notifier before it is retried.
+
+## Configuration
+
+All settings live in `.env` (copy [.env.example](.env.example); it holds placeholders only).
+
+| Variable | Purpose |
+| --- | --- |
+| `DATABASE_URL` | App database |
+| `FLOWDESK_API_KEY` | Static key for the public API (`X-API-Key`) |
+| `CLASSIFIER` | `fake` (default) or `openai_compatible` |
+| `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL` | Required for `openai_compatible` |
+| `FAKE_CLASSIFIER_MODE` | `valid`, `invalid`, `timeout`, `provider_error` |
+| `N8N_WEBHOOK_URL`, `FLOWDESK_CALLBACK_URL` | Where the worker sends events, and where n8n calls back |
+| `FLOWDESK_TO_N8N_SECRET`, `N8N_TO_FLOWDESK_SECRET` | HMAC secrets for each direction |
+| `NOTIFIER_URL` | Notifier base URL (Reconciliation) |
+| `DISPATCH_CALLBACK_TIMEOUT_SECONDS` | Wait for n8n's callback before a Dispatch becomes `unknown` |
+
+Change the `change-me` values before exposing the stack anywhere.
+
+## The e2e check
+
+`pnpm demo:e2e` ([scripts/demo-e2e.ts](scripts/demo-e2e.ts)) drives the four acceptance scenarios from [PLAN.md §8](docs/plan/PLAN.md) through the public API and the notifier admin endpoint, using the real n8n:
+
+- **A**: SAP Request → classified, urgent by `erp_blocker` → Dispatch succeeded, `[URGENT]` message delivered; a repeated Idempotency-Key yields the same Ticket.
+- **B**: company-wide blocker → urgent by `org_wide_blocker`, evaluation recorded.
+- **C**: notifier set to `fail` → Dispatch `failed`, Ticket intact → mode `ok`, manual retry → same Dispatch, new attempt, earlier attempts kept, one Ticket.
+- **D**: worker swapped for a one-off container with `FAKE_CLASSIFIER_MODE=invalid` → repair fails → `needs_review`, raw output kept, no Dispatch → manual classification dispatches. The compose worker is restored afterwards. `E2E_SKIP_D=1` skips this scenario.
+
+It adds Tickets to the running stack and takes about two minutes (Scenario C waits out the automatic retries). To run it without touching your own data, start a separate stack: `COMPOSE_PROJECT_NAME=flowdesk-e2e docker compose up -d` with different host ports in `.env`, then run the script from the same directory with the same `COMPOSE_PROJECT_NAME` exported (Scenario D drives `docker compose` and needs to reach that stack). Both stacks share the `flowdesk-app` image tag, so rebuilding one retags it for the other.
 
 ## Simulated notifier
 
@@ -84,3 +176,19 @@ pnpm typecheck && pnpm lint
 ```
 
 The compose `migrate` step applies migrations and loads idempotent demo data (`pnpm db:migrate && pnpm db:seed`). After changing `src/infra/db/schema.ts`, run `pnpm db:generate` to add a migration. The test run drops and re-migrates `flowdesk_test` from scratch.
+
+The Vitest suite runs against real Postgres. It covers the Priority Rules, status transitions, Classification schema, ticket creation and idempotency, Scenarios A–D (with a local stub in place of n8n), Reconciliation of a lost response, webhook signatures and worker job claiming. `pnpm demo:e2e` is the counterpart that exercises the real n8n.
+
+## Limitations
+
+- No real authentication: a static API key, and Requesters are chosen from seed data.
+- Reconciliation depends on the target exposing a lookup by idempotency key. The simulated notifier does; a real system may not.
+- A single worker process is assumed for the demo, though job claiming is safe for several.
+- No semantic duplicate detection: two people reporting the same outage get two Tickets.
+- The AI's self-reported reasoning is shown for explanation only and is never used for decisions.
+- Scenario D in `pnpm demo:e2e` covers invalid output; provider errors (three attempts, then review) are covered by the Vitest suite, not the live check.
+- The `response_format` accepted by a real LLM provider is not verified yet (see the smoke test above).
+
+## Future improvements
+
+Semantic duplicate linking, real SSO, an SAP/ERP connector, a Data Warehouse export of Ticket Events, SLA timers, assignment of Tickets to individuals within a Team, and real chat channels (Slack/Teams) as additional n8n branches.

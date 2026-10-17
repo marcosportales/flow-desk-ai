@@ -20,7 +20,8 @@
     "format:check": "prettier --check .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "demo:e2e": "tsx scripts/demo-e2e.ts"
   },
   "dependencies": {
     "@tailwindcss/postcss": "^4.3.3",
