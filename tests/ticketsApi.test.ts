@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { requesters } from "@/infra/db/schema";
 import { GET as listRequesters } from "@/app/api/requesters/route";
-import { POST as postTicket } from "@/app/api/tickets/route";
+import { GET as getTickets, POST as postTicket } from "@/app/api/tickets/route";
 import { connectTestDb } from "./support/db";
 import { testDatabaseUrl } from "./support/testDatabaseUrl";
 
@@ -152,5 +152,43 @@ describe("GET /api/requesters", () => {
     );
 
     expect(res.status).toBe(401);
+  });
+});
+
+describe("GET /api/tickets", () => {
+  const get = (search: string, headers: Record<string, string> = {}) =>
+    getTickets(
+      new Request(`http://localhost/api/tickets${search}`, { headers }),
+    );
+
+  it("requires the API key", async () => {
+    expect((await get("")).status).toBe(401);
+  });
+
+  it("lists Tickets with pagination metadata and applies filters", async () => {
+    const requester = await newRequester();
+    const title = `Listed ${randomUUID().slice(0, 8)}`;
+    await post(
+      { requesterId: requester.id, title, description: "Long enough text." },
+      authed(),
+    );
+
+    const res = await get(`?q=${encodeURIComponent(title)}&status=open`, {
+      "X-API-Key": API_KEY,
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toMatchObject({ total: 1, page: 1, pageSize: 25 });
+    expect(body.tickets[0]).toMatchObject({
+      title,
+      requesterName: "Api Person",
+      dispatchStatus: null,
+    });
+  });
+
+  it("returns 422 for an invalid filter", async () => {
+    const res = await get("?status=bogus", { "X-API-Key": API_KEY });
+    expect(res.status).toBe(422);
+    expect((await res.json()).error.code).toBe("validation_error");
   });
 });

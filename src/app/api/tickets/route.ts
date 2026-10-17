@@ -3,6 +3,7 @@ import { errorResponse } from "@/infra/api/errors";
 import { getDb } from "@/infra/db/client";
 import type { tickets } from "@/infra/db/schema";
 import { createTicket } from "@/services/createTicket";
+import { listTickets } from "@/services/listTickets";
 
 export const dynamic = "force-dynamic";
 
@@ -14,6 +15,26 @@ function publicTicket(ticket: Ticket) {
   delete rest.requestHash;
   delete rest.idempotencyKey;
   return rest;
+}
+
+export async function GET(request: Request) {
+  const unauthorized = rejectUnlessAuthorized(request);
+  if (unauthorized) return unauthorized;
+
+  // Repeated params: the first one wins, as on the /tickets page.
+  const query: Record<string, string> = {};
+  for (const [k, v] of new URL(request.url).searchParams) query[k] ??= v;
+  const result = await listTickets(getDb(), query);
+  if (result.kind === "invalid") {
+    return errorResponse(
+      422,
+      "validation_error",
+      "Invalid query",
+      result.details,
+    );
+  }
+  const { tickets, total, page, pageSize } = result;
+  return Response.json({ tickets, total, page, pageSize });
 }
 
 export async function POST(request: Request) {
