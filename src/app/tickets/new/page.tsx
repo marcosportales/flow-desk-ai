@@ -15,6 +15,7 @@ import { RequestForm } from "./RequestForm";
 export const dynamic = "force-dynamic";
 
 export default async function NewTicketPage() {
+  const idempotencyKey = randomUUID();
   const rows = await getDb()
     .select({
       id: requesters.id,
@@ -36,7 +37,13 @@ export default async function NewTicketPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <RequestForm requesters={rows} idempotencyKey={randomUUID()} />
+          {/* Keyed by the idempotency key so a refresh remounts the form with
+              fresh state and a fresh key. */}
+          <RequestForm
+            key={idempotencyKey}
+            requesters={rows}
+            idempotencyKey={idempotencyKey}
+          />
         </CardContent>
       </Card>
     </main>

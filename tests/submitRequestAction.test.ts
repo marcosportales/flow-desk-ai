@@ -48,6 +48,8 @@ describe("submitRequest (/tickets/new)", () => {
     expect(second.status).toBe("created");
     if (first.status !== "created" || second.status !== "created") return;
     expect(second.ticketNumber).toBe(first.ticketNumber);
+    expect(first.ticketId).toBeTruthy();
+    expect(second.ticketId).toBe(first.ticketId);
 
     const [tally] = await db
       .select({ n: count() })

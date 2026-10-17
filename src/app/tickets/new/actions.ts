@@ -5,7 +5,7 @@ import { createTicket } from "@/services/createTicket";
 
 export type SubmitRequestState =
   | { status: "idle" }
-  | { status: "created"; ticketNumber: number }
+  | { status: "created"; ticketId: string; ticketNumber: number }
   | {
       status: "error";
       message: string;
@@ -31,7 +31,11 @@ export async function submitRequest(
   switch (result.kind) {
     case "created":
     case "replayed":
-      return { status: "created", ticketNumber: result.ticket.number! };
+      return {
+        status: "created",
+        ticketId: result.ticket.id,
+        ticketNumber: result.ticket.number!,
+      };
     case "conflict":
       return {
         status: "error",
