@@ -3,8 +3,11 @@ import { writeFile } from "node:fs/promises";
 import { classifierFromEnv } from "@/infra/classifier";
 import { getDb, getSql } from "@/infra/db/client";
 import { dispatchConfigFromEnv } from "@/infra/n8n/config";
+import { notifierConfigFromEnv } from "@/infra/notifier/client";
 import { classifyTicket } from "@/services/classifyTicket";
 import { dispatchTicket } from "@/services/dispatchTicket";
+import { reconcileDispatch } from "@/services/reconcileDispatch";
+import { sweepCallbackDeadlines } from "@/services/sweepCallbackDeadlines";
 import {
   exponentialBackoffMs,
   type Handlers,
@@ -20,13 +23,15 @@ const HEARTBEAT_FILE = "/tmp/worker-heartbeat";
 // Fail at start-up on a bad CLASSIFIER / LLM_* / n8n configuration.
 const classifier = classifierFromEnv(process.env);
 const dispatchConfig = dispatchConfigFromEnv(process.env);
+const notifierConfig = notifierConfigFromEnv(process.env);
 const db = getDb();
 
-// Registered as they land (reconcile: SCRUM-14). The worker only claims kinds
-// that have a handler, so jobs of the others wait in the queue untouched.
+// The worker only claims kinds that have a handler, so jobs of the others wait
+// in the queue untouched.
 const handlers: Handlers = {
   classify: (job) => classifyTicket(db, classifier, job),
   dispatch: (job) => dispatchTicket(db, dispatchConfig, job),
+  reconcile: (job) => reconcileDispatch(db, notifierConfig, job),
 };
 
 // Classify retries after a provider error: 2s, 8s, 30s (IMPLEMENTATION.md §2.5).
@@ -34,10 +39,6 @@ const backoffMs = (attempts: number, kind: JobKind) =>
   kind === "classify"
     ? ([2_000, 8_000, 30_000][attempts - 1] ?? 30_000)
     : exponentialBackoffMs(attempts);
-
-// Marks `sent` Dispatches past their callback deadline `unknown` and enqueues
-// a reconcile job; wired up with the Dispatch handlers.
-async function sweepCallbackDeadlines(): Promise<void> {}
 
 const workerId = `worker-${process.pid}-${randomUUID().slice(0, 8)}`;
 const sql = getSql();
@@ -68,7 +69,7 @@ while (running) {
 
   if (Date.now() >= nextTickAt) {
     nextTickAt = Date.now() + TICK_MS;
-    await sweepCallbackDeadlines().catch((error) =>
+    await sweepCallbackDeadlines(db).catch((error) =>
       console.error("tick failed", error),
     );
   }

@@ -81,7 +81,7 @@ describe("POST /api/webhooks/n8n", () => {
     });
   });
 
-  it("settles a sent Dispatch as failed with n8n's error", async () => {
+  it("records n8n's failure and queues an automatic retry while the budget lasts", async () => {
     const before = await sentDispatch();
 
     const response = await callback({
@@ -93,17 +93,41 @@ describe("POST /api/webhooks/n8n", () => {
 
     expect(response.status).toBe(200);
     const after = await snapshot(before.ticket.id);
-    expect(after.dispatch.status).toBe("failed");
+    expect(after.dispatch).toMatchObject({
+      id: before.dispatch.id,
+      status: "pending",
+      autoAttempts: 1,
+    });
     expect(after.attempts[0]).toMatchObject({
       outcome: "failed",
       error: "notifier answered 500",
       n8nExecutionId: "exec-2",
     });
+    expect(after.jobs.map((j) => j.status).sort()).toEqual(["done", "queued"]);
     expect(after.events.at(-1)).toMatchObject({
       type: "dispatch_failed",
       actor: "n8n",
       data: { dispatchId: before.dispatch.id, error: "notifier answered 500" },
     });
+  });
+
+  it("settles a sent Dispatch as failed once the automatic budget is spent", async () => {
+    const before = await sentDispatch();
+    await db
+      .update(dispatches)
+      .set({ autoAttempts: 3 })
+      .where(eq(dispatches.id, before.dispatch.id));
+
+    await callback({
+      dispatch_id: before.dispatch.id,
+      outcome: "failed",
+      error: "notifier answered 500",
+      n8n_execution_id: "exec-3",
+    });
+
+    const after = await snapshot(before.ticket.id);
+    expect(after.dispatch.status).toBe("failed");
+    expect(after.jobs.map((j) => j.status)).toEqual(["done"]);
   });
 
   it("settles an Unknown Dispatch when its callback arrives late", async () => {

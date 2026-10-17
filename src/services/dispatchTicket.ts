@@ -45,6 +45,9 @@ export async function dispatchTicket(
       .where(eq(tickets.id, dispatch.ticketId));
     if (!ticket) throw new Error(`Ticket ${dispatch.ticketId} not found`);
 
+    // Only a manual retry (§4.7) reaches the handler with the automatic budget
+    // already spent; automatic retries and Reconciliation follow-ups never do.
+    const manual = dispatch.autoAttempts >= MAX_AUTO_ATTEMPTS;
     const body = JSON.stringify({
       dispatch_id: dispatch.id,
       ticket: {
@@ -77,7 +80,7 @@ export async function dispatchTicket(
     await tx.insert(dispatchAttempts).values({
       dispatchId: dispatch.id,
       attemptNo,
-      trigger: "auto",
+      trigger: manual ? "manual" : "auto",
       outcome,
       ...failure,
       startedAt,
@@ -95,8 +98,13 @@ export async function dispatchTicket(
       },
     });
 
-    const autoAttempts = dispatch.autoAttempts + 1;
-    const exhausted = !result.ok && autoAttempts >= MAX_AUTO_ATTEMPTS;
+    // A manual attempt is a single try: it does not spend the automatic budget
+    // and, if it fails, goes straight back to `failed`.
+    const autoAttempts = manual
+      ? dispatch.autoAttempts
+      : dispatch.autoAttempts + 1;
+    const exhausted =
+      !result.ok && (manual || autoAttempts >= MAX_AUTO_ATTEMPTS);
     const status = result.ok ? "sent" : exhausted ? "failed" : "pending";
     if (status !== dispatch.status) {
       transitionDispatchStatus(dispatch.status, status);
@@ -118,7 +126,9 @@ export async function dispatchTicket(
         actor: "system",
         data: {
           dispatchId: dispatch.id,
-          reason: `n8n did not accept the Dispatch after ${autoAttempts} attempts: ${result.error}`,
+          reason: manual
+            ? `n8n did not accept the manual retry: ${result.error}`
+            : `n8n did not accept the Dispatch after ${autoAttempts} attempts: ${result.error}`,
         },
       });
     }
