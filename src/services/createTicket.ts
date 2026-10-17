@@ -6,7 +6,7 @@ import * as schema from "@/infra/db/schema";
 import { jobs, requesters, ticketEvents, tickets } from "@/infra/db/schema";
 
 // Any Drizzle Postgres database over this schema.
-type Db = PgDatabase<PgQueryResultHKT, typeof schema>;
+export type Db = PgDatabase<PgQueryResultHKT, typeof schema>;
 type Ticket = typeof tickets.$inferSelect;
 
 export const createTicketInput = z.object({

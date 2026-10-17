@@ -26,7 +26,8 @@ type RunOptions = {
   sql: Sql;
   workerId: string;
   handlers: Handlers;
-  backoffMs?: (attempts: number) => number;
+  // Kinds differ in retry policy (IMPLEMENTATION.md §2.5).
+  backoffMs?: (attempts: number, kind: JobKind) => number;
   // Only claim these Tickets' jobs; lets tests share a database with others.
   ticketIds?: string[];
 };
@@ -100,7 +101,7 @@ export async function runNextJob({
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const dead = job.attempts >= job.maxAttempts;
-    const delay = `${dead ? 0 : backoffMs(job.attempts)} milliseconds`;
+    const delay = `${dead ? 0 : backoffMs(job.attempts, job.kind)} milliseconds`;
     await sql`
       update jobs
       set status = ${dead ? "dead" : "queued"}::job_status,
