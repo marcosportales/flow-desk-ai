@@ -21,3 +21,5 @@ docker compose up -d postgres   # tests run against the flowdesk_test database
 pnpm test
 pnpm typecheck && pnpm lint
 ```
+
+The compose `migrate` step applies migrations and loads idempotent demo data (`pnpm db:migrate && pnpm db:seed`). After changing `src/infra/db/schema.ts`, run `pnpm db:generate` to add a migration. The test run drops and re-migrates `flowdesk_test` from scratch.
