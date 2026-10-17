@@ -53,7 +53,13 @@ describe("worker", () => {
       },
     };
 
-    await runNextJob({ sql, workerId: "w1", handlers, backoffMs: noBackoff });
+    await runNextJob({
+      sql,
+      ticketIds: [job.ticketId],
+      workerId: "w1",
+      handlers,
+      backoffMs: noBackoff,
+    });
 
     expect(seen).toContain(job.id);
     const done = await reload(job.id);
@@ -65,7 +71,13 @@ describe("worker", () => {
     const job = await newJob({ runAt: new Date(Date.now() + 60_000) });
     const handlers: Handlers = { classify: async () => {} };
 
-    await runNextJob({ sql, workerId: "w1", handlers, backoffMs: noBackoff });
+    await runNextJob({
+      sql,
+      ticketIds: [job.ticketId],
+      workerId: "w1",
+      handlers,
+      backoffMs: noBackoff,
+    });
 
     expect((await reload(job.id)).status).toBe("queued");
   });
@@ -73,6 +85,7 @@ describe("worker", () => {
   it("never runs the same job on two concurrent workers", async () => {
     const created = await Promise.all(Array.from({ length: 10 }, newJob));
     const ids = created.map((j) => j.id);
+    const ticketIds = created.map((j) => j.ticketId);
     const runs = new Map<string, number>();
     const handlers: Handlers = {
       classify: async (j) => {
@@ -83,7 +96,13 @@ describe("worker", () => {
 
     const drain = async (workerId: string) => {
       for (let i = 0; i < 40; i++) {
-        await runNextJob({ sql, workerId, handlers, backoffMs: noBackoff });
+        await runNextJob({
+          sql,
+          ticketIds,
+          workerId,
+          handlers,
+          backoffMs: noBackoff,
+        });
       }
     };
     await Promise.all([drain("w1"), drain("w2"), drain("w3")]);
@@ -107,7 +126,13 @@ describe("worker", () => {
       },
     };
 
-    await runNextJob({ sql, workerId: "w2", handlers, backoffMs: noBackoff });
+    await runNextJob({
+      sql,
+      ticketIds: [job.ticketId],
+      workerId: "w2",
+      handlers,
+      backoffMs: noBackoff,
+    });
 
     expect(seen).toContain(job.id);
     expect((await reload(job.id)).status).toBe("done");
@@ -121,7 +146,13 @@ describe("worker", () => {
     });
     const handlers: Handlers = { classify: async () => {} };
 
-    await runNextJob({ sql, workerId: "w2", handlers, backoffMs: noBackoff });
+    await runNextJob({
+      sql,
+      ticketIds: [job.ticketId],
+      workerId: "w2",
+      handlers,
+      backoffMs: noBackoff,
+    });
 
     const same = await reload(job.id);
     expect(same.status).toBe("running");
@@ -138,7 +169,13 @@ describe("worker", () => {
     });
     const handlers: Handlers = { classify: async () => {} };
 
-    await runNextJob({ sql, workerId: "w2", handlers, backoffMs: noBackoff });
+    await runNextJob({
+      sql,
+      ticketIds: [job.ticketId],
+      workerId: "w2",
+      handlers,
+      backoffMs: noBackoff,
+    });
 
     const dead = await reload(job.id);
     expect(dead.status).toBe("dead");
@@ -159,7 +196,13 @@ describe("worker", () => {
     };
 
     const before = Date.now();
-    await runNextJob({ sql, workerId: "w1", handlers, backoffMs });
+    await runNextJob({
+      sql,
+      ticketIds: [job.ticketId],
+      workerId: "w1",
+      handlers,
+      backoffMs,
+    });
 
     const first = await reload(job.id);
     expect(first.status).toBe("queued");
@@ -174,7 +217,13 @@ describe("worker", () => {
         .update(jobs)
         .set({ runAt: new Date() })
         .where(eq(jobs.id, job.id));
-      await runNextJob({ sql, workerId: "w1", handlers, backoffMs });
+      await runNextJob({
+        sql,
+        ticketIds: [job.ticketId],
+        workerId: "w1",
+        handlers,
+        backoffMs,
+      });
       expect((await reload(job.id)).attempts).toBe(expected);
     }
 
@@ -188,7 +237,13 @@ describe("worker", () => {
     const job = await newJob({ kind: "reconcile" });
     const handlers: Handlers = { classify: async () => {} };
 
-    await runNextJob({ sql, workerId: "w1", handlers, backoffMs: noBackoff });
+    await runNextJob({
+      sql,
+      ticketIds: [job.ticketId],
+      workerId: "w1",
+      handlers,
+      backoffMs: noBackoff,
+    });
 
     // Not claimed: the worker only claims kinds it can run.
     expect((await reload(job.id)).status).toBe("queued");

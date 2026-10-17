@@ -27,6 +27,8 @@ type RunOptions = {
   workerId: string;
   handlers: Handlers;
   backoffMs?: (attempts: number) => number;
+  // Only claim these Tickets' jobs; lets tests share a database with others.
+  ticketIds?: string[];
 };
 
 type Row = {
@@ -42,6 +44,7 @@ async function claimJob(
   sql: Sql,
   workerId: string,
   kinds: JobKind[],
+  ticketIds: string[] | undefined,
 ): Promise<Job | null> {
   const lease = `${LEASE_MS} milliseconds`;
   return sql.begin(async (tx) => {
@@ -51,6 +54,7 @@ async function claimJob(
       set status = 'dead', locked_at = null, locked_by = null,
           last_error = 'lease expired with no attempts left'
       where kind = any(${kinds}::job_kind[]) and status = 'running'
+        and (${ticketIds ?? null}::uuid[] is null or ticket_id = any(${ticketIds ?? null}::uuid[]))
         and locked_at < now() - ${lease}::interval
         and attempts >= max_attempts`;
     const [row] = await tx<Row[]>`
@@ -60,6 +64,7 @@ async function claimJob(
       where id = (
         select id from jobs
         where kind = any(${kinds}::job_kind[])
+          and (${ticketIds ?? null}::uuid[] is null or ticket_id = any(${ticketIds ?? null}::uuid[]))
           and ((status = 'queued' and run_at <= now())
             or (status = 'running' and locked_at < now() - ${lease}::interval))
         order by run_at
@@ -84,9 +89,10 @@ export async function runNextJob({
   workerId,
   handlers,
   backoffMs = exponentialBackoffMs,
+  ticketIds,
 }: RunOptions): Promise<boolean> {
   const kinds = Object.keys(handlers) as JobKind[];
-  const job = await claimJob(sql, workerId, kinds);
+  const job = await claimJob(sql, workerId, kinds, ticketIds);
   if (!job) return false;
 
   try {
