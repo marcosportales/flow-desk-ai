@@ -49,7 +49,7 @@ type Props = {
 };
 
 const idle: ManualActionState = { status: "idle" };
-function ActionForm({
+export function ActionForm({
   title,
   action,
   ticketId,

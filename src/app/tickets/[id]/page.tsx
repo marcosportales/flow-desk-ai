@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 import { ArrowLeftIcon, InfoIcon } from "lucide-react";
 import { z } from "zod";
-import { canRunManualActions } from "@/domain/permissions";
+import { canCloseOrReopen, canRunManualActions } from "@/domain/permissions";
 import { formatTicketNumber } from "@/domain/ticketNumber";
 import { requireUser } from "@/infra/auth/session";
 import { getDb } from "@/infra/db/client";
@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/table";
 import { AutoRefresh } from "./AutoRefresh";
 import { ManualActions } from "./ManualActions";
+import { RequesterResponse } from "./RequesterResponse";
 import { label } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
@@ -109,11 +110,12 @@ export default async function TicketDetailPage({
     settled,
   } = result.detail;
   // Requester-only Users get a read-only page (ADR 0008).
-  const canAct = canRunManualActions(viewer, {
+  const ticketPolicy = {
     requesterId: ticket.requesterId,
     category: ticket.category,
     team: ticket.team,
-  });
+  };
+  const canAct = canRunManualActions(viewer, ticketPolicy);
   const teamMembers = canAct ? await listTeamMembers(db, ticket.id) : [];
   const overridden = ticket.priorityOverrideReason !== null;
   const latestDispatch = dispatches.at(-1);
@@ -371,6 +373,14 @@ export default async function TicketDetailPage({
           />
         </Section>
       )}
+
+      {!canAct &&
+        canCloseOrReopen(viewer, ticketPolicy) &&
+        ticket.status === "resolved" && (
+          <Section title="Is it fixed?">
+            <RequesterResponse ticketId={ticket.id} />
+          </Section>
+        )}
 
       <Section title="Timeline">
         <ol className="flex flex-col gap-2">

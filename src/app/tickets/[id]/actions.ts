@@ -10,7 +10,11 @@ import {
   releaseTicket,
   takeTicket,
 } from "@/services/assignTicket";
-import { authorizeManualAction } from "@/services/authorizeManualAction";
+import {
+  authorizeManualAction,
+  authorizeRequesterResponse,
+} from "@/services/authorizeManualAction";
+import { respondToResolution } from "@/services/respondToResolution";
 import { changeTicketStatus } from "@/services/changeTicketStatus";
 import { classifyManually } from "@/services/classifyManually";
 import { overridePriority } from "@/services/overridePriority";
@@ -171,6 +175,35 @@ export async function statusAction(
     operator.actor,
   );
   return settle(ticketId, result, "Ticket Status changed");
+}
+
+// The Requester's own control: close ("fixed") or reopen ("still broken").
+export async function requesterStatusAction(
+  _previous: ManualActionState,
+  data: FormData,
+): Promise<ManualActionState> {
+  const ticketId = text(data, "ticketId");
+  if (!z.uuid().safeParse(ticketId).success) return unknownTicket;
+  const user = await requireUser();
+  const verdict = await authorizeRequesterResponse(getDb(), user.id, ticketId);
+  if (verdict === "not_found") return unknownTicket;
+  if (verdict === "forbidden") {
+    return {
+      status: "error",
+      message: "Only the Ticket's Requester can close or reopen it",
+    };
+  }
+  const result = await respondToResolution(
+    getDb(),
+    ticketId,
+    { response: text(data, "response"), reason: text(data, "reason") },
+    userActor(user.id),
+  );
+  return settle(
+    ticketId,
+    result,
+    text(data, "response") === "close" ? "Ticket closed" : "Ticket reopened",
+  );
 }
 
 export async function retryAction(

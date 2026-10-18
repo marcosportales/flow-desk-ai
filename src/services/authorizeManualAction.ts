@@ -1,5 +1,10 @@
 import { eq } from "drizzle-orm";
-import { canRunManualActions } from "@/domain/permissions";
+import {
+  canCloseOrReopen,
+  canRunManualActions,
+  type PolicyTicket,
+  type PolicyUser,
+} from "@/domain/permissions";
 import { dispatches, tickets } from "@/infra/db/schema";
 import type { Db } from "./createTicket";
 import { getUserTeams } from "./getUserTeams";
@@ -23,7 +28,24 @@ export async function authorizeManualAction(
             .where(eq(dispatches.id, target.dispatchId))
         )[0]?.ticketId;
   if (!ticketId) return "not_found";
+  return authorizeOnTicket(db, userId, ticketId, canRunManualActions);
+}
 
+// Gate for the Requester's close/reopen: only the Ticket's own Requester.
+export function authorizeRequesterResponse(
+  db: Db,
+  userId: string,
+  ticketId: string,
+): Promise<ManualActionAuthorization> {
+  return authorizeOnTicket(db, userId, ticketId, canCloseOrReopen);
+}
+
+async function authorizeOnTicket(
+  db: Db,
+  userId: string,
+  ticketId: string,
+  policy: (user: PolicyUser, ticket: PolicyTicket) => boolean,
+): Promise<ManualActionAuthorization> {
   const [ticket] = await db
     .select({
       requesterId: tickets.requesterId,
@@ -35,5 +57,5 @@ export async function authorizeManualAction(
   if (!ticket) return "not_found";
 
   const user = { id: userId, teams: await getUserTeams(db, userId) };
-  return canRunManualActions(user, ticket) ? "allowed" : "forbidden";
+  return policy(user, ticket) ? "allowed" : "forbidden";
 }

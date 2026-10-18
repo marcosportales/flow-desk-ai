@@ -34,3 +34,13 @@ export function canRunManualActions(
 ): boolean {
   return isOperator(user, ticket);
 }
+
+// The one control a Requester-only User gets: close ("fixed") or reopen
+// ("still broken") their own Ticket. Operators get no say unless they are
+// also the Ticket's Requester.
+export function canCloseOrReopen(
+  user: PolicyUser,
+  ticket: PolicyTicket,
+): boolean {
+  return isRequester(user, ticket);
+}

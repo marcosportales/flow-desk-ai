@@ -5,6 +5,7 @@ import { type Actor, userActor } from "@/domain/actor";
 import { getRequestUser } from "@/infra/auth/session";
 import {
   authorizeManualAction,
+  authorizeRequesterResponse,
   type ManualActionAuthorization,
 } from "@/services/authorizeManualAction";
 import { errorResponse } from "./errors";
@@ -50,6 +51,44 @@ export async function rejectUnlessOperator(
   return { actor: userActor(user.id) };
 }
 
+type Gate = (
+  request: Request,
+  db: Db,
+  target: { ticketId: string },
+) => Promise<{ response: Response } | { actor: Actor }>;
+
+// Closing or reopening needs the Ticket's own Requester session; the API key
+// cannot do it. An unknown Ticket passes through to the service's 404.
+export const rejectUnlessRequester: Gate = async (request, db, target) => {
+  const user = await getRequestUser(request);
+  if (!user) {
+    return {
+      response: request.headers.get("x-api-key")
+        ? errorResponse(
+            403,
+            "forbidden",
+            "Closing or reopening requires the Requester's session; the API key cannot do it",
+          )
+        : errorResponse(401, "unauthorized", "Sign in as the Requester"),
+    };
+  }
+  const verdict = await authorizeRequesterResponse(
+    db,
+    user.id,
+    target.ticketId,
+  );
+  if (verdict === "forbidden") {
+    return {
+      response: errorResponse(
+        403,
+        "forbidden",
+        "Only the Ticket's Requester can close or reopen it",
+      ),
+    };
+  }
+  return { actor: userActor(user.id) };
+};
+
 type ActionResult = { kind: string; message?: string; details?: unknown };
 
 const conflictCodes = new Set([
@@ -69,14 +108,18 @@ export async function manualTicketAction(
     body: unknown,
     actor: Actor,
   ) => Promise<ActionResult>,
-  { withBody = true, successStatus = 200 } = {},
+  {
+    withBody = true,
+    successStatus = 200,
+    gate = rejectUnlessOperator,
+  }: { withBody?: boolean; successStatus?: number; gate?: Gate } = {},
 ): Promise<Response> {
   const { id } = await params;
   if (!z.uuid().safeParse(id).success) {
     return errorResponse(404, "not_found", "Unknown ticket");
   }
   const db = getDb();
-  const operator = await rejectUnlessOperator(request, db, { ticketId: id });
+  const operator = await gate(request, db, { ticketId: id });
   if ("response" in operator) return operator.response;
   let body: unknown;
   if (withBody) {
