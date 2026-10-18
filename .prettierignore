@@ -3,3 +3,5 @@ src/infra/db/migrations/
 n8n/workflows/
 .next/
 *.md
+.agents/
+.claude/worktrees/
