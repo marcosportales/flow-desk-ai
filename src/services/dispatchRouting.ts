@@ -1,18 +1,10 @@
-import { type Actor, actorColumns } from "@/domain/actor";
+import { type Actor, systemActor } from "@/domain/actor";
 import { desc, eq, max } from "drizzle-orm";
 import type { Category } from "@/domain/classification";
 import type { Priority } from "@/domain/priority";
 import { routeFor, type Team } from "@/domain/routing";
-import { transitionDispatchStatus } from "@/domain/transitions";
-import {
-  dispatches,
-  jobs,
-  type NewTicketEvent,
-  ticketEvents,
-} from "@/infra/db/schema";
-import type { Db } from "./createTicket";
-
-export type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
+import { dispatches, jobs } from "@/infra/db/schema";
+import { appendTicketEvent, moveDispatchStatus, type Tx } from "./ticketWrites";
 
 // What a manual action answers with; each caller adds its own failure kinds.
 export type ManualFailure =
@@ -37,12 +29,10 @@ export async function createDispatch(
     .insert(dispatches)
     .values({ ticketId, sequence: (last ?? 0) + 1, ...routing, route })
     .returning();
-  await tx.insert(ticketEvents).values({
-    ticketId,
+  await appendTicketEvent(tx, ticketId, systemActor, {
     type: "dispatch_created",
-    actor: "system",
     data: { dispatchId: dispatch!.id, route, team: routing.team },
-  } satisfies NewTicketEvent);
+  });
   await tx.insert(jobs).values({
     kind: "dispatch",
     ticketId,
@@ -77,11 +67,9 @@ export async function rerouteDispatch(
   }
 
   if (latest && ["pending", "sent", "unknown"].includes(latest.status)) {
-    transitionDispatchStatus(latest.status, "failed");
-    await tx
-      .update(dispatches)
-      .set({ status: "failed", callbackDeadline: null })
-      .where(eq(dispatches.id, latest.id));
+    await moveDispatchStatus(tx, latest, "failed", {
+      set: { callbackDeadline: null },
+    });
   }
   const created = await createDispatch(tx, ticketId, routing);
   if (latest) {
@@ -89,11 +77,9 @@ export async function rerouteDispatch(
       .update(dispatches)
       .set({ supersededBy: created.id })
       .where(eq(dispatches.id, latest.id));
-    await tx.insert(ticketEvents).values({
-      ticketId,
+    await appendTicketEvent(tx, ticketId, actor, {
       type: "dispatch_superseded",
-      ...actorColumns(actor),
       data: { dispatchId: latest.id, supersededBy: created.id },
-    } satisfies NewTicketEvent);
+    });
   }
 }

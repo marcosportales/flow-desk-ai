@@ -10,7 +10,7 @@ import type { Team } from "@/domain/routing";
 import type { TicketStatus } from "@/domain/transitions";
 import { notifications, teamMemberships, tickets } from "@/infra/db/schema";
 import type { Db } from "./createTicket";
-import type { Tx } from "./dispatchRouting";
+import type { Tx } from "./ticketWrites";
 
 // In-app Notifications (GLOSSARY: Notification). They are written in the same
 // transaction as the Ticket Event that causes them, so a retry that changes

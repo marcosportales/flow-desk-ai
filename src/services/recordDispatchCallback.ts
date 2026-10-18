@@ -1,15 +1,10 @@
 import { desc, eq } from "drizzle-orm";
 import { z } from "zod";
-import { transitionDispatchStatus } from "@/domain/transitions";
-import {
-  dispatchAttempts,
-  dispatches,
-  type NewTicketEvent,
-  ticketEvents,
-  tickets,
-} from "@/infra/db/schema";
+import { systemActor } from "@/domain/actor";
+import { dispatchAttempts, dispatches, tickets } from "@/infra/db/schema";
 import type { Db } from "./createTicket";
 import { failDispatch } from "./failDispatch";
+import { appendTicketEvent, moveDispatchStatus } from "./ticketWrites";
 
 // n8n's report on a Dispatch: docs/plan/IMPLEMENTATION.md §4.5.
 
@@ -43,28 +38,36 @@ export async function recordDispatchCallback(
     // Duplicates, and callbacks for a Dispatch already settled another way,
     // are kept for the timeline but change nothing.
     if (dispatch.status !== "sent" && dispatch.status !== "unknown") {
-      await tx.insert(ticketEvents).values({
-        ticketId: dispatch.ticketId,
+      await appendTicketEvent(tx, dispatch.ticketId, systemActor, {
         type: "dispatch_callback_ignored",
-        actor: "system",
         data: {
           dispatchId: dispatch.id,
           outcome: callback.outcome,
           status: dispatch.status,
           n8nExecutionId: callback.n8n_execution_id,
         },
-      } satisfies NewTicketEvent);
+      });
       return { kind: "ignored" };
     }
 
+    const reported = {
+      dispatchId: dispatch.id,
+      n8nExecutionId: callback.n8n_execution_id,
+      deliveredAt: callback.delivered_at ?? null,
+      error: callback.error ?? null,
+    };
     if (callback.outcome === "failed") {
-      await failDispatch(tx, dispatch);
+      await failDispatch(tx, dispatch, reported);
     } else {
-      transitionDispatchStatus(dispatch.status, "succeeded");
-      await tx
-        .update(dispatches)
-        .set({ status: "succeeded" })
-        .where(eq(dispatches.id, dispatch.id));
+      await moveDispatchStatus(tx, dispatch, "succeeded", {
+        actor: systemActor,
+        event: {
+          type: "dispatch_succeeded",
+          data: callback.external_reference
+            ? { ...reported, externalReference: callback.external_reference }
+            : reported,
+        },
+      });
       if (callback.external_reference) {
         await tx
           .update(tickets)
@@ -90,23 +93,6 @@ export async function recordDispatchCallback(
         })
         .where(eq(dispatchAttempts.id, attempt.id));
     }
-    await tx.insert(ticketEvents).values({
-      ticketId: dispatch.ticketId,
-      type:
-        callback.outcome === "succeeded"
-          ? "dispatch_succeeded"
-          : "dispatch_failed",
-      actor: "system",
-      data: {
-        dispatchId: dispatch.id,
-        n8nExecutionId: callback.n8n_execution_id,
-        deliveredAt: callback.delivered_at ?? null,
-        error: callback.error ?? null,
-        ...(callback.outcome === "succeeded" && callback.external_reference
-          ? { externalReference: callback.external_reference }
-          : {}),
-      },
-    } satisfies NewTicketEvent);
     return { kind: "settled" };
   });
 }

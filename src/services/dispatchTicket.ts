@@ -1,16 +1,11 @@
 import { eq, max, sql } from "drizzle-orm";
+import { systemActor } from "@/domain/actor";
 import { formatTicketNumber } from "@/domain/ticketNumber";
-import { transitionDispatchStatus } from "@/domain/transitions";
-import {
-  dispatchAttempts,
-  dispatches,
-  type NewTicketEvent,
-  ticketEvents,
-  tickets,
-} from "@/infra/db/schema";
+import { dispatchAttempts, dispatches, tickets } from "@/infra/db/schema";
 import type { DispatchConfig } from "@/infra/n8n/config";
 import { sendDispatchEvent } from "@/infra/n8n/client";
 import type { Db } from "./createTicket";
+import { appendTicketEvent, moveDispatchStatus } from "./ticketWrites";
 
 // Dispatch handler: docs/plan/IMPLEMENTATION.md §4.4, ADR 0005, ADR 0006.
 // The app has already decided Category, Priority, Team and Route; n8n only
@@ -87,17 +82,15 @@ export async function dispatchTicket(
       startedAt,
       finishedAt: new Date(),
     });
-    await tx.insert(ticketEvents).values({
-      ticketId: dispatch.ticketId,
+    await appendTicketEvent(tx, dispatch.ticketId, systemActor, {
       type: "dispatch_attempted",
-      actor: "system",
       data: {
         dispatchId: dispatch.id,
         attemptNo,
         outcome,
         ...failure,
       },
-    } satisfies NewTicketEvent);
+    });
 
     // A manual attempt is a single try: it does not spend the automatic budget
     // and, if it fails, goes straight back to `failed`.
@@ -107,33 +100,30 @@ export async function dispatchTicket(
     const exhausted =
       !result.ok && (manual || autoAttempts >= MAX_AUTO_ATTEMPTS);
     const status = result.ok ? "sent" : exhausted ? "failed" : "pending";
-    if (status !== dispatch.status) {
-      transitionDispatchStatus(dispatch.status, status);
+    const set = {
+      autoAttempts,
+      callbackDeadline: result.ok
+        ? sql`now() + ${`${config.callbackTimeoutSeconds} seconds`}::interval`
+        : null,
+    };
+    if (!exhausted) {
+      await moveDispatchStatus(tx, dispatch, status, { set });
+      return !result.ok;
     }
-    await tx
-      .update(dispatches)
-      .set({
-        status,
-        autoAttempts,
-        callbackDeadline: result.ok
-          ? sql`now() + ${`${config.callbackTimeoutSeconds} seconds`}::interval`
-          : null,
-      })
-      .where(eq(dispatches.id, dispatch.id));
-    if (exhausted) {
-      await tx.insert(ticketEvents).values({
-        ticketId: dispatch.ticketId,
+    await moveDispatchStatus(tx, dispatch, status, {
+      set,
+      actor: systemActor,
+      event: {
         type: "dispatch_failed",
-        actor: "system",
         data: {
           dispatchId: dispatch.id,
           reason: manual
             ? `n8n did not accept the manual retry: ${result.error}`
             : `n8n did not accept the Dispatch after ${autoAttempts} attempts: ${result.error}`,
         },
-      } satisfies NewTicketEvent);
-    }
-    return !result.ok && !exhausted;
+      },
+    });
+    return false;
   });
 
   // Committed above; the throw only makes the worker re-run the job with

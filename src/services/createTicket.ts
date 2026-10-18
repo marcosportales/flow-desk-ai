@@ -2,15 +2,10 @@ import { createHash } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 import { z } from "zod";
-import { type Actor, actorColumns } from "@/domain/actor";
+import type { Actor } from "@/domain/actor";
 import * as schema from "@/infra/db/schema";
-import {
-  jobs,
-  users,
-  type NewTicketEvent,
-  ticketEvents,
-  tickets,
-} from "@/infra/db/schema";
+import { jobs, users, tickets } from "@/infra/db/schema";
+import { appendTicketEvent } from "./ticketWrites";
 
 // Any Drizzle Postgres database over this schema.
 export type Db = PgDatabase<PgQueryResultHKT, typeof schema>;
@@ -94,12 +89,10 @@ export async function createTicket(
         : ({ kind: "conflict" } as const);
     }
 
-    await tx.insert(ticketEvents).values({
-      ticketId: inserted.id,
+    await appendTicketEvent(tx, inserted.id, actor, {
       type: "ticket_created",
-      ...actorColumns(actor),
       data: { requesterId: input.requesterId },
-    } satisfies NewTicketEvent);
+    });
     await tx.insert(jobs).values({ kind: "classify", ticketId: inserted.id });
     return { kind: "created", ticket: inserted } as const;
   });

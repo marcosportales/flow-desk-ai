@@ -1,10 +1,11 @@
-import { type Actor, actorColumns } from "@/domain/actor";
+import type { Actor } from "@/domain/actor";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { priorities } from "@/domain/priority";
-import { type NewTicketEvent, ticketEvents, tickets } from "@/infra/db/schema";
+import { tickets } from "@/infra/db/schema";
 import type { Db } from "./createTicket";
 import { type ManualFailure, rerouteDispatch } from "./dispatchRouting";
+import { appendTicketEvent } from "./ticketWrites";
 
 // Priority Override: a human replaces the computed Priority and must say why.
 // docs/plan/IMPLEMENTATION.md §4.7.
@@ -58,17 +59,15 @@ export async function overridePriority(
         priorityOverrideReason: restored ? null : reason,
       })
       .where(eq(tickets.id, ticket.id));
-    await tx.insert(ticketEvents).values({
-      ticketId: ticket.id,
+    await appendTicketEvent(tx, ticket.id, actor, {
       type: "priority_overridden",
-      ...actorColumns(actor),
       data: {
         from: ticket.priority,
         to: priority,
         computed: ticket.computedPriority,
         reason,
       },
-    } satisfies NewTicketEvent);
+    });
 
     await rerouteDispatch(
       tx,

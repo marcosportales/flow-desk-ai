@@ -5,28 +5,26 @@ import { systemActor } from "@/domain/actor";
 import { ticketTeam } from "@/domain/permissions";
 import { evaluatePriority } from "@/domain/priority";
 import { isDispatchable, teamFor } from "@/domain/routing";
-import { transitionClassificationState } from "@/domain/transitions";
 import {
   type Classifier,
   type ClassifierInput,
   ClassifierProviderError,
 } from "@/infra/classifier/types";
-import {
-  classificationAttempts,
-  type NewTicketEvent,
-  ticketEvents,
-  tickets,
-} from "@/infra/db/schema";
+import { classificationAttempts, tickets } from "@/infra/db/schema";
 import type { Db } from "./createTicket";
 import { createDispatch } from "./dispatchRouting";
 import { notifyQueueEntry } from "./notifications";
+import {
+  appendTicketEvent,
+  moveClassificationState,
+  type Tx,
+} from "./ticketWrites";
 
 // Classify handler: docs/plan/IMPLEMENTATION.md §2.5, §4.3. Invalid or
 // unavailable AI never triggers actions (Scenario D): the Ticket goes to
 // manual review and no Dispatch is created.
 
 type ClassifyJob = { ticketId: string; attempts: number; maxAttempts: number };
-type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
 type Attempt = {
   kind: "initial" | "repair" | "rerun";
@@ -194,10 +192,8 @@ async function recordAttempts(
       error: a.error,
       latencyMs: a.latencyMs,
     });
-    await tx.insert(ticketEvents).values({
-      ticketId,
+    await appendTicketEvent(tx, ticketId, systemActor, {
       type: "classification_attempted",
-      actor: "system",
       data: {
         attemptNo,
         kind: a.kind,
@@ -206,30 +202,18 @@ async function recordAttempts(
         model: classifier.model,
         error: a.error ?? null,
       },
-    } satisfies NewTicketEvent);
+    });
   }
 }
 
 type TicketRow = typeof tickets.$inferSelect;
 
 async function sendToReview(tx: Tx, ticket: TicketRow, reason: string) {
-  if (ticket.classificationState !== "needs_review") {
-    transitionClassificationState(ticket.classificationState, "needs_review");
-    await tx
-      .update(tickets)
-      .set({ classificationState: "needs_review" })
-      .where(eq(tickets.id, ticket.id));
-  }
-  const [event] = await tx
-    .insert(ticketEvents)
-    .values({
-      ticketId: ticket.id,
-      type: "sent_to_review",
-      actor: "system",
-      data: { reason },
-    } satisfies NewTicketEvent)
-    .returning({ id: ticketEvents.id, ticketId: ticketEvents.ticketId });
-  await notifyQueueEntry(tx, event!, ticket, ticketTeam(ticket), systemActor);
+  const event = await moveClassificationState(tx, ticket, "needs_review", {
+    actor: systemActor,
+    event: { type: "sent_to_review", data: { reason } },
+  });
+  await notifyQueueEntry(tx, event, ticket, ticketTeam(ticket), systemActor);
 }
 
 async function applyClassification(
@@ -241,14 +225,9 @@ async function applyClassification(
   const team = teamFor(facts.category);
   const dispatchable = isDispatchable(facts.category);
   const nextState = dispatchable ? "classified" : "needs_review";
-  if (ticket.classificationState !== nextState) {
-    transitionClassificationState(ticket.classificationState, nextState);
-  }
 
-  await tx
-    .update(tickets)
-    .set({
-      classificationState: nextState,
+  const classified = await moveClassificationState(tx, ticket, nextState, {
+    set: {
       category: facts.category,
       summary: facts.summary,
       blocksWork: facts.blocks_work,
@@ -258,27 +237,15 @@ async function applyClassification(
       computedPriority: evaluation.priority,
       priorityRule: evaluation.rule,
       team,
-    })
-    .where(eq(tickets.id, ticket.id));
-
-  const [classified] = await tx
-    .insert(ticketEvents)
-    .values([
-      {
-        ticketId: ticket.id,
-        type: "classified",
-        actor: "system",
-        data: { ...facts, team },
-      },
-      {
-        ticketId: ticket.id,
-        type: "priority_computed",
-        actor: "system",
-        data: evaluation,
-      },
-    ] satisfies NewTicketEvent[])
-    .returning({ id: ticketEvents.id, ticketId: ticketEvents.ticketId });
-  await notifyQueueEntry(tx, classified!, ticket, team, systemActor);
+    },
+    actor: systemActor,
+    event: { type: "classified", data: { ...facts, team } },
+  });
+  await appendTicketEvent(tx, ticket.id, systemActor, {
+    type: "priority_computed",
+    data: evaluation,
+  });
+  await notifyQueueEntry(tx, classified, ticket, team, systemActor);
 
   if (!dispatchable) {
     await sendToReview(

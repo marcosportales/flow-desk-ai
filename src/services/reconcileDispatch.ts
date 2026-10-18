@@ -1,16 +1,11 @@
 import { eq, max } from "drizzle-orm";
-import { transitionDispatchStatus } from "@/domain/transitions";
-import {
-  dispatchAttempts,
-  dispatches,
-  type NewTicketEvent,
-  ticketEvents,
-  tickets,
-} from "@/infra/db/schema";
+import { systemActor } from "@/domain/actor";
+import { dispatchAttempts, dispatches, tickets } from "@/infra/db/schema";
 import { type ErpConfig, findIncident } from "@/infra/erp/client";
 import { deliveryExists, type NotifierConfig } from "@/infra/notifier/client";
 import type { Db } from "./createTicket";
 import { failDispatch } from "./failDispatch";
+import { moveDispatchStatus } from "./ticketWrites";
 
 // Reconcile handler: docs/plan/IMPLEMENTATION.md §4.6, ADR 0006. Asks the
 // target service whether it holds the Dispatch's id before anything may be
@@ -92,12 +87,15 @@ export async function reconcileDispatch(
       finishedAt: new Date(),
     });
 
+    const reconciled = { dispatchId: dispatch.id, reconciled: true } as const;
     if (found) {
-      transitionDispatchStatus(dispatch.status, "succeeded");
-      await tx
-        .update(dispatches)
-        .set({ status: "succeeded" })
-        .where(eq(dispatches.id, dispatch.id));
+      await moveDispatchStatus(tx, dispatch, "succeeded", {
+        actor: systemActor,
+        event: {
+          type: "dispatch_succeeded",
+          data: { ...reconciled, externalReference },
+        },
+      });
       if (externalReference) {
         await tx
           .update(tickets)
@@ -105,21 +103,7 @@ export async function reconcileDispatch(
           .where(eq(tickets.id, dispatch.ticketId));
       }
     } else {
-      await failDispatch(tx, dispatch);
+      await failDispatch(tx, dispatch, { ...reconciled, error: notFoundError });
     }
-    const reconciled = { dispatchId: dispatch.id, reconciled: true } as const;
-    await tx.insert(ticketEvents).values({
-      ticketId: dispatch.ticketId,
-      actor: "system",
-      ...(found
-        ? {
-            type: "dispatch_succeeded",
-            data: { ...reconciled, externalReference },
-          }
-        : {
-            type: "dispatch_failed",
-            data: { ...reconciled, error: notFoundError },
-          }),
-    } satisfies NewTicketEvent);
   });
 }
