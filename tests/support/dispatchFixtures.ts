@@ -15,15 +15,26 @@ import { integrationActor } from "@/domain/actor";
 import { createTicket } from "@/services/createTicket";
 import type { DispatchConfig } from "@/infra/n8n/config";
 import { dispatchTicket } from "@/services/dispatchTicket";
-import { reconcileDispatch } from "@/services/reconcileDispatch";
+import {
+  type ReconcileConfig,
+  reconcileDispatch,
+} from "@/services/reconcileDispatch";
 import { runNextJob } from "@/worker/runner";
 import type { TestDb } from "./db";
 
 export const TO_N8N_SECRET = "flowdesk-to-n8n";
 export const FROM_N8N_SECRET = "n8n-to-flowdesk";
 
-const ERP_BLOCKER =
-  "I haven't been able to access SAP since this morning, and I need to process some invoices.";
+const ERP_BLOCKER = {
+  title: "SAP is down",
+  description:
+    "I haven't been able to access SAP since this morning, and I need to process some invoices.",
+};
+// Classified `access`: Dispatched to the notifier, not the ERP.
+export const ACCESS_REQUEST = {
+  title: "Jira access",
+  description: "Please give me access to the Jira project for my new role.",
+};
 
 export function dispatchConfig(webhookUrl: string): DispatchConfig {
   return {
@@ -35,8 +46,9 @@ export function dispatchConfig(webhookUrl: string): DispatchConfig {
 }
 
 export function dispatchFixtures(db: TestDb, sql: Sql) {
-  // A classified ERP blocker with its pending Dispatch and queued dispatch job.
-  async function classifiedTicket() {
+  // A classified Ticket (an ERP blocker unless another Request is given) with
+  // its pending Dispatch and queued dispatch job.
+  async function classifiedTicket(request = ERP_BLOCKER) {
     const [requester] = await db
       .insert(users)
       .values({
@@ -50,8 +62,7 @@ export function dispatchFixtures(db: TestDb, sql: Sql) {
       {
         requesterId: requester!.id,
         idempotencyKey: randomUUID(),
-        title: "SAP is down",
-        description: ERP_BLOCKER,
+        ...request,
       },
       integrationActor,
     );
@@ -84,12 +95,12 @@ export function dispatchFixtures(db: TestDb, sql: Sql) {
     });
 
   // Runs the Ticket's next reconcile job through the real worker loop.
-  const runReconcile = (ticketId: string, notifierUrl: string) =>
+  const runReconcile = (ticketId: string, targets: ReconcileConfig) =>
     runNextJob({
       sql,
       workerId: `test-${randomUUID()}`,
       handlers: {
-        reconcile: (job) => reconcileDispatch(db, { notifierUrl }, job),
+        reconcile: (job) => reconcileDispatch(db, targets, job),
       },
       backoffMs: () => 0,
       ticketIds: [ticketId],

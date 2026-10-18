@@ -80,6 +80,7 @@ beforeAll(async () => {
     category: "erp",
     priority: "urgent",
     computedPriority: "urgent",
+    externalReference: "INC-000042",
   });
   await insertTicket("access-low", {
     ...classified,
@@ -112,8 +113,10 @@ describe("listTickets", () => {
     const erp = result.tickets.find((t) => t.id === ids["erp-urgent"])!;
     expect(erp.requesterName).toBe("List Person");
     expect(erp.dispatchStatus).toBe("succeeded");
+    expect(erp.externalReference).toBe("INC-000042");
     const pending = result.tickets.find((t) => t.id === ids["pending"])!;
     expect(pending.dispatchStatus).toBeNull();
+    expect(pending.externalReference).toBeNull();
     expect(result.tickets[0]!.createdAt >= result.tickets[4]!.createdAt).toBe(
       true,
     );

@@ -155,6 +155,12 @@ export default async function TicketDetailPage({
           <StatusBadge value={ticket.classificationState} />
           <span>Assignee:</span>
           <strong>{assignee ? assignee.name : "Unassigned"}</strong>
+          {ticket.externalReference && (
+            <>
+              <span>External Reference:</span>
+              <strong className="font-mono">{ticket.externalReference}</strong>
+            </>
+          )}
         </div>
       </header>
 

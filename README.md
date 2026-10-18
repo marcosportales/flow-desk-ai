@@ -58,8 +58,9 @@ For a guided tour, follow the [demo script](docs/demo.md) (about 4 minutes). The
 | `worker` | Claims jobs from a Postgres table: classify, dispatch, reconcile |
 | `n8n`, `n8n-import` | Runs the dispatch workflow; the one-shot imports it on first start |
 | `notifier` | Simulated notification target with failure modes |
+| `erp` | Simulated ERP: `erp` Tickets become incidents; same failure modes ([ADR 0009](docs/adr/0009-flowdesk-is-a-layer-in-front-of-the-erp.md)) |
 
-Code layout: `src/domain` (pure rules, no I/O), `src/services` (use cases, called by both Route Handlers and Server Actions), `src/infra` (database, Classifier, n8n client, HMAC), `src/worker`, `services/notifier`, `n8n/workflows`. The full design is in [docs/plan/IMPLEMENTATION.md](docs/plan/IMPLEMENTATION.md).
+Code layout: `src/domain` (pure rules, no I/O), `src/services` (use cases, called by both Route Handlers and Server Actions), `src/infra` (database, Classifier, n8n client, HMAC), `src/worker`, `services/notifier`, `services/erp`, `n8n/workflows`. The full design is in [docs/plan/IMPLEMENTATION.md](docs/plan/IMPLEMENTATION.md).
 
 ## Design decisions
 
@@ -131,11 +132,22 @@ Slow modes hold the request for `SLOW_RESPONSE_MS` (default 15000).
 curl -X POST localhost:4000/admin/mode -H 'content-type: application/json' -d '{"mode":"fail_once"}'
 ```
 
+## Simulated ERP
+
+`services/erp` stands in for the ERP an `erp` Ticket is handed to. FlowDesk does not replace it: the ERP stays the system of record, and FlowDesk keeps its incident number as the Ticket's External Reference ([ADR 0009](docs/adr/0009-flowdesk-is-a-layer-in-front-of-the-erp.md)). Incidents are stored in a JSON file on the `erp-data` volume.
+
+- `POST /incidents` with an `Idempotency-Key` header and `{ "ticket_number", "title", "summary", "priority" }`: `201` with the incident and its `reference` (`INC-000001`, …); a repeated key returns the stored incident with `200` and creates nothing.
+- `GET /incidents/:id`: `200` with the incident or `404` (used by Reconciliation, which also takes the `reference` from it).
+- `GET /`: HTML list of incidents.
+- `POST /admin/mode`: the same modes as the notifier, on `localhost:4100`.
+
+To use a real ERP, only the workflow's `Create ERP incident` node changes: call the ERP's API (for SAP, an OData service) with the `dispatch_id` as its idempotency key, and return its record id as `external_reference`. Reconciliation then needs that system's lookup by the same key in `src/infra/erp/client.ts`.
+
 ## Dispatch
 
 A classified, dispatchable Ticket gets a Dispatch, which the worker sends to n8n (`N8N_WEBHOOK_URL`) as an HMAC-signed event: `X-FlowDesk-Signature: sha256=HMAC(FLOWDESK_TO_N8N_SECRET, timestamp + "." + body)` with `X-FlowDesk-Timestamp`. n8n answers `202`, the Dispatch becomes `sent`, and it has `DISPATCH_CALLBACK_TIMEOUT_SECONDS` to report back. A non-2xx answer or a network error is a failed attempt; after 3 the Dispatch is `failed`.
 
-The workflow `n8n/workflows/flowdesk-dispatch.json` verifies the signature, validates the event, picks the Team's channel, prefixes `[URGENT]` on the Urgent Route, and delivers to the notifier with `Idempotency-Key = dispatch_id` (no retries in n8n). It then calls `POST /api/webhooks/n8n` (`FLOWDESK_CALLBACK_URL`), signed the same way with `N8N_TO_FLOWDESK_SECRET`. The callback is rejected with `401` on a bad signature or a timestamp more than 5 minutes off; a callback for an already-settled Dispatch is recorded on the timeline and changes nothing.
+The workflow `n8n/workflows/flowdesk-dispatch.json` verifies the signature, validates the event, and then takes one of two branches. An `erp` Dispatch creates an incident in the simulated ERP; every other Category picks the Team's channel, prefixes `[URGENT]` on the Urgent Route and delivers to the notifier. Both send `Idempotency-Key = dispatch_id` (no retries in n8n). It then calls `POST /api/webhooks/n8n` (`FLOWDESK_CALLBACK_URL`), signed the same way with `N8N_TO_FLOWDESK_SECRET`; for an `erp` Dispatch the callback carries the incident's `external_reference`, stored on the Ticket. The callback is rejected with `401` on a bad signature or a timestamp more than 5 minutes off; a callback for an already-settled Dispatch is recorded on the timeline and changes nothing.
 
 `n8n-import` imports and publishes the workflow on n8n's first start only. To load an edited workflow into an existing stack:
 
@@ -185,7 +197,8 @@ The Vitest suite runs against real Postgres. It covers the Priority Rules, statu
 ## Limitations
 
 - Authentication is Better Auth with seeded fictional Users (fixed demo password); the public API uses a static key. No sign-up, no password reset.
-- Reconciliation depends on the target exposing a lookup by idempotency key. The simulated notifier does; a real system may not.
+- Reconciliation depends on the target exposing a lookup by idempotency key. The simulated notifier and ERP do; a real system may not.
+- The ERP is simulated; there is no SAP connector (ADR 0009). An `erp` Ticket creates an ERP incident instead of a chat message to `it_systems`.
 - A single worker process is assumed for the demo, though job claiming is safe for several.
 - No semantic duplicate detection: two people reporting the same outage get two Tickets.
 - The AI's self-reported reasoning is shown for explanation only and is never used for decisions.

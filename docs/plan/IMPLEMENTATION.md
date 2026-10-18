@@ -297,11 +297,11 @@ A separate tick (every 10s) finds `sent` Dispatches past `callback_deadline`, ma
 
 ### 4.5 Callback webhook (`POST /api/webhooks/n8n`)
 - Verify the HMAC (separate secret) and reject a timestamp skew over 5 minutes.
-- Body: `{ dispatch_id, outcome: "succeeded" | "failed", error?, n8n_execution_id, delivered_at? }`.
+- Body: `{ dispatch_id, outcome: "succeeded" | "failed", error?, n8n_execution_id, delivered_at?, external_reference? }`. On `succeeded`, `external_reference` (an ERP incident number) is stored on the Ticket (ADR 0009).
 - Idempotent: a callback for an already-terminal Dispatch is recorded as an event and otherwise ignored. A callback arriving while the Dispatch is `unknown` settles it.
 
 ### 4.6 Reconcile handler
-`GET notifier/deliveries/{dispatch_id}`: found → `succeeded`; 404 → `failed` (then auto-retry if budget remains); unreachable → throw (job retries).
+`GET notifier/deliveries/{dispatch_id}`, or `GET erp/incidents/{dispatch_id}` for an `erp` Dispatch: found → `succeeded` (an ERP incident's `reference` becomes the External Reference); 404 → `failed` (then auto-retry if budget remains); unreachable → throw (job retries).
 
 ### 4.7 Manual actions
 | Action | Allowed when | Effect |
@@ -320,7 +320,8 @@ A separate tick (every 10s) finds `sent` Dispatches past `callback_deadline`, ma
 1. **Webhook** (POST `/webhook/flowdesk-dispatch`, respond immediately with 202). Raw body enabled.
 2. **Code: verify signature**: recompute the HMAC using `$env.FLOWDESK_TO_N8N_SECRET`; on mismatch, stop (no callback, logged as an execution error).
 3. **Code: validate payload**: required fields and allowed enum values.
-4. **Switch on `team`** → **Set** node per team building the message (channel name, template). An IF on `route = urgent` prefixes `[URGENT]` and targets the urgent channel.
+4. **IF `category = erp`** → **HTTP Request → ERP** `POST /incidents` with `Idempotency-Key: {{dispatch_id}}`, same timeout and no retries, then straight to step 6 with the incident's `reference` as `external_reference` (ADR 0009). Otherwise:
+   **Switch on `team`** → **Set** node per team building the message (channel name, template). An IF on `route = urgent` prefixes `[URGENT]` and targets the urgent channel.
 5. **HTTP Request → notifier** `POST /deliveries` with `Idempotency-Key: {{dispatch_id}}`, timeout 10s, *continue on fail*, **no retries**.
 6. **Code: build callback**: outcome from step 5, `$execution.id`, HMAC with `$env.N8N_TO_FLOWDESK_SECRET`.
 7. **HTTP Request → app callback**.

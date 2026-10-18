@@ -81,6 +81,35 @@ describe("POST /api/webhooks/n8n", () => {
     });
   });
 
+  it("stores the External Reference the ERP gave back on the Ticket", async () => {
+    const before = await sentDispatch();
+    expect(before.ticket.externalReference).toBeNull();
+
+    const response = await callback({
+      ...succeeded(before.dispatch.id),
+      external_reference: "INC-000007",
+    });
+
+    expect(response.status).toBe(200);
+    const after = await snapshot(before.ticket.id);
+    expect(after.dispatch.status).toBe("succeeded");
+    expect(after.ticket.externalReference).toBe("INC-000007");
+    expect(after.events.at(-1)).toMatchObject({
+      type: "dispatch_succeeded",
+      data: { externalReference: "INC-000007" },
+    });
+  });
+
+  it("leaves the External Reference unset when the callback carries none", async () => {
+    const before = await sentDispatch();
+
+    await callback(succeeded(before.dispatch.id));
+
+    expect((await snapshot(before.ticket.id)).ticket.externalReference).toBe(
+      null,
+    );
+  });
+
   it("records n8n's failure and queues an automatic retry while the budget lasts", async () => {
     const before = await sentDispatch();
 

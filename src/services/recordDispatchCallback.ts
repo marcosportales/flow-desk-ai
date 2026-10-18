@@ -1,7 +1,12 @@
 import { desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { transitionDispatchStatus } from "@/domain/transitions";
-import { dispatchAttempts, dispatches, ticketEvents } from "@/infra/db/schema";
+import {
+  dispatchAttempts,
+  dispatches,
+  ticketEvents,
+  tickets,
+} from "@/infra/db/schema";
 import type { Db } from "./createTicket";
 import { failDispatch } from "./failDispatch";
 
@@ -13,6 +18,8 @@ export const DispatchCallback = z.object({
   error: z.string().nullish(),
   n8n_execution_id: z.string().min(1),
   delivered_at: z.string().nullish(),
+  // The record id a target system gave back, e.g. an ERP incident number.
+  external_reference: z.string().trim().min(1).max(200).nullish(),
 });
 export type DispatchCallback = z.infer<typeof DispatchCallback>;
 
@@ -57,6 +64,12 @@ export async function recordDispatchCallback(
         .update(dispatches)
         .set({ status: "succeeded" })
         .where(eq(dispatches.id, dispatch.id));
+      if (callback.external_reference) {
+        await tx
+          .update(tickets)
+          .set({ externalReference: callback.external_reference })
+          .where(eq(tickets.id, dispatch.ticketId));
+      }
     }
     // The callback reports on the attempt that is in flight, the latest one.
     const [attempt] = await tx
@@ -88,6 +101,9 @@ export async function recordDispatchCallback(
         n8nExecutionId: callback.n8n_execution_id,
         deliveredAt: callback.delivered_at ?? null,
         error: callback.error ?? null,
+        ...(callback.outcome === "succeeded" && callback.external_reference
+          ? { externalReference: callback.external_reference }
+          : {}),
       },
     });
     return { kind: "settled" };

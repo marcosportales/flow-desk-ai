@@ -118,6 +118,11 @@ function Row({ ticket }: { ticket: TicketListItem }) {
       <TableCell>
         <StatusBadge value={ticket.dispatchStatus} />
       </TableCell>
+      <TableCell className="font-mono whitespace-nowrap">
+        {ticket.externalReference ?? (
+          <span className="text-muted-foreground">—</span>
+        )}
+      </TableCell>
       <TableCell className="whitespace-nowrap text-muted-foreground">
         {dateFormat.format(ticket.createdAt)} UTC
       </TableCell>
@@ -277,6 +282,7 @@ export default async function TicketsPage({
                     "Status",
                     "Classification",
                     "Dispatch",
+                    "External Reference",
                     "Created",
                   ].map((h) => (
                     <TableHead key={h}>{h}</TableHead>
