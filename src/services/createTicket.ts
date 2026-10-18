@@ -14,7 +14,7 @@ import {
 
 // Any Drizzle Postgres database over this schema.
 export type Db = PgDatabase<PgQueryResultHKT, typeof schema>;
-type Ticket = typeof tickets.$inferSelect;
+export type Ticket = typeof tickets.$inferSelect;
 
 export const createTicketInput = z.object({
   requesterId: z.uuid(),
