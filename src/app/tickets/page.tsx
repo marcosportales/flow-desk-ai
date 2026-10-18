@@ -116,7 +116,8 @@ export default async function TicketsPage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
-  await requireUser();
+  const user = await requireUser();
+  const scope = { requesterId: user.id };
   const params = await searchParams;
   // Repeated params: the first one wins.
   const query = Object.fromEntries(
@@ -124,8 +125,8 @@ export default async function TicketsPage({
   );
   const db = getDb();
   const [result, counters] = await Promise.all([
-    listTickets(db, query),
-    getTicketCounters(db),
+    listTickets(db, query, scope),
+    getTicketCounters(db, scope),
   ]);
 
   const pageHref = (page: number) => {

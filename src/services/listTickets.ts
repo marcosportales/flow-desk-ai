@@ -67,9 +67,17 @@ function escapeLike(text: string) {
   return text.replace(/[\\%_]/g, "\\$&");
 }
 
+// Restricts a read to the Tickets one User raised. Omitted for Integrations,
+// which see every Ticket.
+export type RequesterScope = { requesterId: string };
+
+const inScope = (scope?: RequesterScope) =>
+  scope && eq(tickets.requesterId, scope.requesterId);
+
 export async function listTickets(
   db: Db,
   rawQuery: unknown,
+  scope?: RequesterScope,
 ): Promise<ListTicketsResult> {
   const parsed = listTicketsQuery.safeParse(rawQuery);
   if (!parsed.success) {
@@ -80,6 +88,7 @@ export async function listTickets(
   const pageSize = query.page_size ?? DEFAULT_PAGE_SIZE;
 
   const conditions: (SQL | undefined)[] = [
+    inScope(scope),
     query.status && eq(tickets.status, query.status),
     query.classification_state &&
       eq(tickets.classificationState, query.classification_state),
@@ -131,12 +140,15 @@ export type TicketCounters = {
 };
 
 // Counters describe work still needing attention, so they cover open Tickets only.
-export async function getTicketCounters(db: Db): Promise<TicketCounters> {
+export async function getTicketCounters(
+  db: Db,
+  scope?: RequesterScope,
+): Promise<TicketCounters> {
   const countOpen = async (extra?: SQL) => {
     const [r] = await db
       .select({ n: count() })
       .from(tickets)
-      .where(and(eq(tickets.status, "open"), extra));
+      .where(and(eq(tickets.status, "open"), inScope(scope), extra));
     return r?.n ?? 0;
   };
 
