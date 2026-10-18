@@ -4,6 +4,8 @@ Turns internal business requests into structured, traceable Tickets. An AI reads
 
 Terms (Request, Ticket, Dispatch, Route, …) are defined in [GLOSSARY.md](GLOSSARY.md).
 
+**FlowDesk is not an ERP, and does not replace one.** It is the intake and orchestration layer in front of it: people describe a problem in plain language, FlowDesk turns it into a structured, prioritised, routed Ticket, and hands it to whatever system does the work. For an `erp` Ticket that system is the ERP, which stays the system of record; FlowDesk keeps the ERP's incident number as the Ticket's External Reference ([ADR 0009](docs/adr/0009-flowdesk-is-a-layer-in-front-of-the-erp.md)).
+
 ## Quick start
 
 Requires Docker with Compose, and Node 24 + pnpm for `pnpm demo:e2e`. No API keys are needed: the default Classifier is a deterministic fake.
@@ -12,12 +14,14 @@ Requires Docker with Compose, and Node 24 + pnpm for `pnpm demo:e2e`. No API key
 cp .env.example .env
 docker compose up -d      # first start builds the image and imports the n8n workflow
 pnpm install
-pnpm demo:e2e             # Scenarios A–D against the live stack
+pnpm demo:e2e             # Scenarios A–E against the live stack
 ```
 
 - App: http://localhost:3000 (`GET /api/health` checks DB connectivity)
 - n8n: http://localhost:5678 (executions of the dispatch workflow; create the owner account on first visit)
 - Notifier: http://localhost:4000 (received-messages page)
+
+Open the app and use **Sign in as…** on `/sign-in`: **Ana Morales** is a Requester only (she sees what she raised and can close or reopen her own Tickets); **Grace Lindqvist** (`it_systems`), **Ines Duarte** (`data_team`), **Kofi Mensah** (`it_systems` and `data_team`) and **Jonas Weber** (`service_desk`) belong to a Team and are Operators of its Tickets. Same password for all seeded Users; `DEMO_SIGN_IN=off` removes the shortcuts.
 
 Host ports can be overridden in `.env` (`APP_HOST_PORT`, `N8N_HOST_PORT`, `NOTIFIER_HOST_PORT`, `POSTGRES_HOST_PORT`); `pnpm demo:e2e` reads them. `pnpm demo:e2e` also honours `E2E_APP_URL` and `E2E_NOTIFIER_URL`.
 
@@ -74,6 +78,9 @@ Recorded as ADRs in [docs/adr/](docs/adr/):
 | [0004](docs/adr/0004-background-processing-via-postgres-jobs.md) | Background processing via a Postgres job table and a worker |
 | [0005](docs/adr/0005-app-decides-n8n-executes.md) | The app decides; n8n executes and reports back |
 | [0006](docs/adr/0006-reconcile-before-retry.md) | Reconcile before retry; the worker is the only retry owner |
+| [0007](docs/adr/0007-better-auth-and-per-ticket-capacities.md) | Better Auth sessions; Requester and Operator are per-Ticket capacities, not roles |
+| [0008](docs/adr/0008-permission-from-team-assignment-is-accountability.md) | Permission comes from Team membership; assignment is accountability |
+| [0009](docs/adr/0009-flowdesk-is-a-layer-in-front-of-the-erp.md) | FlowDesk is an intake and orchestration layer in front of the ERP, not a replacement |
 
 In short: a lost HTTP response is never treated as a failed operation. Each Dispatch has one id used as the idempotency key from the app through n8n to the notifier, so a retry cannot deliver twice, and an unconfirmed Dispatch is checked against the notifier before it is retried.
 
@@ -100,12 +107,13 @@ Change the `change-me` values before exposing the stack anywhere.
 
 ## The e2e check
 
-`pnpm demo:e2e` ([scripts/demo-e2e.ts](scripts/demo-e2e.ts)) drives the four acceptance scenarios from [PLAN.md §8](docs/plan/PLAN.md) through the public API and the notifier admin endpoint, using the real n8n:
+`pnpm demo:e2e` ([scripts/demo-e2e.ts](scripts/demo-e2e.ts)) drives the four acceptance scenarios from [PLAN.md §8](docs/plan/PLAN.md) plus Scenario E through the public API, session cookies and the notifier and ERP admin endpoints, using the real n8n:
 
 - **A**: SAP Request → classified, urgent by `erp_blocker` → Dispatch succeeded, `[URGENT]` message delivered; a repeated Idempotency-Key yields the same Ticket.
 - **B**: company-wide blocker → urgent by `org_wide_blocker`, evaluation recorded.
 - **C**: notifier set to `fail` → Dispatch `failed`, Ticket intact → mode `ok`, manual retry → same Dispatch, new attempt, earlier attempts kept, one Ticket.
 - **D**: worker swapped for a one-off container with `FAKE_CLASSIFIER_MODE=invalid` → repair fails → `needs_review`, raw output kept, no Dispatch → manual classification dispatches. The compose worker is restored afterwards. `E2E_SKIP_D=1` skips this scenario.
+- **E**: the two-User path. Ana (a Requester) raises a Ticket; Kofi (Operator of its Team) takes and resolves it; Ana has an unread Notification and closes the Ticket with a reason; neither of them can do the other's action, and the timeline shows the reason.
 
 It adds Tickets to the running stack and takes about two minutes (Scenario C waits out the automatic retries). To run it without touching your own data, start a separate stack: `COMPOSE_PROJECT_NAME=flowdesk-e2e docker compose up -d` with different host ports in `.env`, then run the script from the same directory with the same `COMPOSE_PROJECT_NAME` exported (Scenario D drives `docker compose` and needs to reach that stack). Both stacks share the `flowdesk-app` image tag, so rebuilding one retags it for the other.
 
@@ -142,6 +150,87 @@ curl -X POST localhost:4000/admin/mode -H 'content-type: application/json' -d '{
 - `POST /admin/mode`: the same modes as the notifier, on `localhost:4100`.
 
 To use a real ERP, only the workflow's `Create ERP incident` node changes: call the ERP's API (for SAP, an OData service) with the `dispatch_id` as its idempotency key, and return its record id as `external_reference`. Reconciliation then needs that system's lookup by the same key in `src/infra/erp/client.ts`.
+
+## n8n workflows
+
+There is one workflow, `n8n/workflows/flowdesk-dispatch.json`. n8n only executes: the app has already decided Category, Team, Priority and Route, and the workflow never decides or retries ([ADR 0005](docs/adr/0005-app-decides-n8n-executes.md)). The diagrams below render on GitHub.
+
+### Workflow: `flowdesk-dispatch`
+
+```mermaid
+flowchart TD
+    W["Dispatch webhook<br/>POST /webhook/flowdesk-dispatch<br/>answers 202 at once"] --> V["Verify signature<br/>HMAC-SHA256 of timestamp.rawBody"]
+    V -->|mismatch: throws| X1(["execution fails, no callback"])
+    V --> P["Validate payload<br/>rejects a malformed event"]
+    P -->|invalid: throws| X1
+    P --> C{"ERP Category?<br/>category = erp"}
+
+    C -->|yes| E["Create ERP incident<br/>POST ERP /incidents<br/>Idempotency-Key = dispatch_id"]
+
+    C -->|no| T{"Switch on Team"}
+    T -->|it_systems| M1["IT Systems message<br/>#it-systems"]
+    T -->|identity_access| M2["Identity & Access message<br/>#identity-access"]
+    T -->|data_team| M3["Data Team message<br/>#data-team"]
+    M1 --> U{"Urgent Route?"}
+    M2 --> U
+    M3 --> U
+    U -->|urgent| UM["Urgent message<br/>channel-urgent, [URGENT] prefix"]
+    U -->|normal| D
+    UM --> D["Deliver to notifier<br/>POST notifier /deliveries<br/>Idempotency-Key = dispatch_id"]
+
+    E --> B["Build callback<br/>outcome + external_reference for erp<br/>signed with N8N_TO_FLOWDESK_SECRET"]
+    D --> B
+    B --> K["Callback to app<br/>POST /api/webhooks/n8n"]
+```
+
+A failing HTTP node does not stop the workflow: `Build callback` reports the failure to the app, which owns retries.
+
+### Dispatch: app, n8n and target
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant W as Worker
+    participant N as n8n
+    participant T as Notifier or ERP
+    participant A as App (webhook)
+
+    W->>N: signed Dispatch event (X-FlowDesk-Signature)
+    N-->>W: 202 (Dispatch becomes sent)
+    N->>N: verify signature, validate, pick branch
+    N->>T: create delivery / incident (Idempotency-Key = dispatch_id)
+    T-->>N: 201 (an erp incident also returns its reference)
+    N->>A: signed callback (outcome, external_reference)
+    A->>A: verify signature and timestamp, settle Dispatch
+    Note over A: erp: reference stored on the Ticket as External Reference
+```
+
+### Lost response: Reconcile before retry
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant W as Worker
+    participant N as n8n
+    participant T as Notifier or ERP
+    participant A as App
+
+    W->>N: signed Dispatch event
+    N-->>W: 202 (Dispatch sent, callback deadline starts)
+    N->>T: create (Idempotency-Key = dispatch_id)
+    T-->>T: stores it, but the answer is too slow
+    Note over N,A: no callback arrives before DISPATCH_CALLBACK_TIMEOUT_SECONDS
+    W->>A: Dispatch becomes unknown
+    W->>T: GET by dispatch_id (Reconciliation)
+    alt target already holds it
+        T-->>W: 200 (record, reference)
+        W->>A: settle as succeeded, nothing is sent again
+    else target has nothing
+        T-->>W: 404
+        W->>N: retry with the same dispatch_id
+        Note over T: a repeated key returns the stored record, never a second one
+    end
+```
 
 ## Dispatch
 
@@ -197,6 +286,9 @@ The Vitest suite runs against real Postgres. It covers the Priority Rules, statu
 ## Limitations
 
 - Authentication is Better Auth with seeded fictional Users (fixed demo password); the public API uses a static key. No sign-up, no password reset.
+- No admin role or screen: Users, Teams and membership come from the seed. Operator rights come from Team membership (ADR 0008).
+- No automatic assignment: an Operator takes a Ticket from the Team queue, or reassigns it. Assignment to individuals is manual.
+- Notifications are in-app only (the header bell); nothing is sent by email or chat to a person.
 - Reconciliation depends on the target exposing a lookup by idempotency key. The simulated notifier and ERP do; a real system may not.
 - The ERP is simulated; there is no SAP connector (ADR 0009). An `erp` Ticket creates an ERP incident instead of a chat message to `it_systems`.
 - A single worker process is assumed for the demo, though job claiming is safe for several.
