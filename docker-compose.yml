@@ -133,7 +133,26 @@ services:
       timeout: 5s
       retries: 6
 
+  # Simulated ERP: the `erp` Category's target (ADR 0009).
+  erp:
+    build: services/erp
+    restart: unless-stopped
+    ports:
+      - "${ERP_HOST_PORT:-4100}:4100"
+    volumes:
+      - erp-data:/app/data
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://localhost:4100/health').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
 volumes:
   postgres-data:
   n8n-data:
   notifier-data:
+  erp-data:

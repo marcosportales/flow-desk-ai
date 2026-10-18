@@ -68,6 +68,7 @@ describe("getTicketDetail", () => {
     expect(d.ticket).not.toHaveProperty("requestHash");
     expect(d.ticket).not.toHaveProperty("idempotencyKey");
     expect(d.requester.name).toBe("Detail Person");
+    expect(d.ticket.externalReference).toBeNull();
     expect(d.classificationAttempts).toEqual([]);
     expect(d.dispatches).toEqual([]);
     expect(d.priorityEvaluation).toBeNull();

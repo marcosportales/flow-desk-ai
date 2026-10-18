@@ -201,6 +201,9 @@ export const tickets = pgTable(
     // The Operator accountable for the Ticket; null while no one has taken it
     // (ADR 0008). Assignment never grants or removes permission.
     assigneeId: uuid("assignee_id").references(() => users.id),
+    // The id the target system gave its record of this Ticket (an ERP
+    // incident number), from the latest succeeded Dispatch that reported one.
+    externalReference: text("external_reference"),
     idempotencyKey: text("idempotency_key").notNull(),
     requestHash: text("request_hash").notNull(),
     createdAt: createdAt(),

@@ -49,11 +49,57 @@
       }
     },
     {
+      "id": "6b1d3c1e-0f0a-4a51-9f3e-000000000013",
+      "name": "ERP Category?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [660, 300],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2 },
+          "conditions": [
+            {
+              "id": "c1000000-0000-4000-8000-000000000002",
+              "leftValue": "={{ $json.category }}",
+              "rightValue": "erp",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "6b1d3c1e-0f0a-4a51-9f3e-000000000014",
+      "name": "Create ERP incident",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1760, 640],
+      "onError": "continueRegularOutput",
+      "retryOnFail": false,
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.ERP_URL }}/incidents",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "Idempotency-Key", "value": "={{ $json.dispatch_id }}" }]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ ticket_number: $json.ticket.number, title: $json.ticket.title, summary: $json.ticket.summary, priority: $json.priority }) }}",
+        "options": {
+          "timeout": 10000,
+          "response": { "response": { "fullResponse": true, "neverError": true } }
+        }
+      }
+    },
+    {
       "id": "6b1d3c1e-0f0a-4a51-9f3e-000000000004",
       "name": "Switch on Team",
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3.2,
-      "position": [660, 300],
+      "position": [880, 300],
       "parameters": {
         "rules": {
           "values": [
@@ -115,7 +161,7 @@
       "name": "IT Systems message",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
-      "position": [880, 100],
+      "position": [1100, 100],
       "parameters": {
         "assignments": {
           "assignments": [
@@ -132,7 +178,7 @@
       "name": "Identity & Access message",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
-      "position": [880, 300],
+      "position": [1100, 300],
       "parameters": {
         "assignments": {
           "assignments": [
@@ -149,7 +195,7 @@
       "name": "Data Team message",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
-      "position": [880, 500],
+      "position": [1100, 500],
       "parameters": {
         "assignments": {
           "assignments": [
@@ -166,7 +212,7 @@
       "name": "Urgent Route?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
-      "position": [1100, 300],
+      "position": [1320, 300],
       "parameters": {
         "conditions": {
           "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2 },
@@ -188,7 +234,7 @@
       "name": "Urgent message",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
-      "position": [1320, 200],
+      "position": [1540, 200],
       "parameters": {
         "assignments": {
           "assignments": [
@@ -205,7 +251,7 @@
       "name": "Deliver to notifier",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1540, 300],
+      "position": [1760, 300],
       "onError": "continueRegularOutput",
       "retryOnFail": false,
       "parameters": {
@@ -229,10 +275,10 @@
       "name": "Build callback",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1760, 300],
+      "position": [1980, 300],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "// Reports the delivery outcome, signed with N8N_TO_FLOWDESK_SECRET\n// (IMPLEMENTATION.md §4.5). Retries are the app's job (ADR 0006).\nconst crypto = require('crypto');\nconst event = $('Validate payload').first().json;\nconst res = $input.first().json;\nconst status = res.statusCode;\nconst ok = !res.error && status >= 200 && status < 300;\nlet error = null;\nif (!ok) {\n  error = res.error\n    ? String(res.error.message || JSON.stringify(res.error))\n    : `notifier answered HTTP ${status}`;\n}\nconst body = JSON.stringify({\n  dispatch_id: event.dispatch_id,\n  outcome: ok ? 'succeeded' : 'failed',\n  error,\n  n8n_execution_id: String($execution.id),\n  delivered_at: ok ? (res.body && res.body.received_at) || new Date().toISOString() : null,\n});\nconst timestamp = String(Math.floor(Date.now() / 1000));\nconst signature = 'sha256=' + crypto\n  .createHmac('sha256', $env.N8N_TO_FLOWDESK_SECRET)\n  .update(timestamp + '.' + body)\n  .digest('hex');\nreturn [{ json: { callback_url: event.callback_url, body, timestamp, signature } }];\n"
+        "jsCode": "// Reports the outcome of the notifier delivery or the ERP incident, signed\n// with N8N_TO_FLOWDESK_SECRET (IMPLEMENTATION.md §4.5). For an `erp` Dispatch\n// it carries the incident's reference as the External Reference (ADR 0009).\n// Retries are the app's job (ADR 0006).\nconst crypto = require('crypto');\nconst event = $('Validate payload').first().json;\nconst erp = event.category === 'erp';\nconst res = $input.first().json;\nconst status = res.statusCode;\nconst ok = !res.error && status >= 200 && status < 300;\nlet error = null;\nif (!ok) {\n  error = res.error\n    ? String(res.error.message || JSON.stringify(res.error))\n    : `${erp ? 'ERP' : 'notifier'} answered HTTP ${status}`;\n}\nconst received = res.body && (erp ? res.body.created_at : res.body.received_at);\nconst body = JSON.stringify({\n  dispatch_id: event.dispatch_id,\n  outcome: ok ? 'succeeded' : 'failed',\n  error,\n  n8n_execution_id: String($execution.id),\n  delivered_at: ok ? received || new Date().toISOString() : null,\n  external_reference: ok && erp ? (res.body && res.body.reference) || null : null,\n});\nconst timestamp = String(Math.floor(Date.now() / 1000));\nconst signature = 'sha256=' + crypto\n  .createHmac('sha256', $env.N8N_TO_FLOWDESK_SECRET)\n  .update(timestamp + '.' + body)\n  .digest('hex');\nreturn [{ json: { callback_url: event.callback_url, body, timestamp, signature } }];\n"
       }
     },
     {
@@ -240,7 +286,7 @@
       "name": "Callback to app",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1980, 300],
+      "position": [2200, 300],
       "parameters": {
         "method": "POST",
         "url": "={{ $json.callback_url }}",
@@ -262,7 +308,14 @@
   "connections": {
     "Dispatch webhook": { "main": [[{ "node": "Verify signature", "type": "main", "index": 0 }]] },
     "Verify signature": { "main": [[{ "node": "Validate payload", "type": "main", "index": 0 }]] },
-    "Validate payload": { "main": [[{ "node": "Switch on Team", "type": "main", "index": 0 }]] },
+    "Validate payload": { "main": [[{ "node": "ERP Category?", "type": "main", "index": 0 }]] },
+    "ERP Category?": {
+      "main": [
+        [{ "node": "Create ERP incident", "type": "main", "index": 0 }],
+        [{ "node": "Switch on Team", "type": "main", "index": 0 }]
+      ]
+    },
+    "Create ERP incident": { "main": [[{ "node": "Build callback", "type": "main", "index": 0 }]] },
     "Switch on Team": {
       "main": [
         [{ "node": "IT Systems message", "type": "main", "index": 0 }],

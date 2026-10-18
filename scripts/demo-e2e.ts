@@ -1,5 +1,6 @@
 // End-to-end smoke check: Scenarios A–D (docs/plan/PLAN.md §8) against the
-// live compose stack, through the public API and the notifier admin endpoint.
+// live compose stack, through the public API and the notifier and ERP admin
+// endpoints.
 //
 //   docker compose up -d && pnpm demo:e2e
 //
@@ -22,6 +23,9 @@ const APP =
 const NOTIFIER =
   process.env.E2E_NOTIFIER_URL ??
   `http://localhost:${process.env.NOTIFIER_HOST_PORT ?? 4000}`;
+const ERP =
+  process.env.E2E_ERP_URL ??
+  `http://localhost:${process.env.ERP_HOST_PORT ?? 4100}`;
 const API_KEY = process.env.FLOWDESK_API_KEY ?? "change-me";
 const SKIP_D = process.env.E2E_SKIP_D === "1";
 const RUN = Date.now().toString(36);
@@ -161,6 +165,10 @@ async function delivery(dispatchId: string) {
   return request(NOTIFIER, "GET", `/deliveries/${dispatchId}`);
 }
 
+async function incident(dispatchId: string) {
+  return request(ERP, "GET", `/incidents/${dispatchId}`);
+}
+
 function compose(...args: string[]) {
   return execFileSync("docker", ["compose", ...args], {
     stdio: "pipe",
@@ -174,6 +182,8 @@ async function preflight() {
   const notifier = await request(NOTIFIER, "GET", "/admin/mode");
   assert(notifier.status === 200, `notifier reachable at ${NOTIFIER}`);
   await setNotifierMode("ok");
+  const erp = await request(ERP, "POST", "/admin/mode", { mode: "ok" });
+  assert(erp.status === 200, `ERP reachable at ${ERP}`);
   const requesters = await api("GET", "/api/requesters");
   assert(requesters.status === 200, "API key accepted");
   const first = requesters.json.requesters?.[0];
@@ -222,14 +232,12 @@ async function scenarioA(requesterId: string) {
     ]),
     "timeline events are in order",
   );
-  const sent = await delivery(dispatch.id);
+  // An `erp` Ticket goes to the simulated ERP, not the notifier (ADR 0009).
+  const created = await incident(dispatch.id);
+  assert(created.status === 200, "ERP holds the incident (key = dispatch id)");
   assert(
-    sent.status === 200,
-    "notifier holds the delivery (key = dispatch id)",
-  );
-  assert(
-    String(sent.json.message ?? "").includes("[URGENT]"),
-    "delivered message is prefixed [URGENT]",
+    d.ticket.externalReference === created.json.reference,
+    `External Reference ${created.json.reference} stored on the Ticket`,
   );
 }
 

@@ -69,6 +69,7 @@ export type TicketListItem = {
   status: (typeof tickets.$inferSelect)["status"];
   classificationState: (typeof tickets.$inferSelect)["classificationState"];
   dispatchStatus: (typeof dispatches.$inferSelect)["status"] | null;
+  externalReference: string | null;
   createdAt: Date;
 };
 
@@ -172,6 +173,7 @@ export async function listTickets(
         status: tickets.status,
         classificationState: tickets.classificationState,
         dispatchStatus: latestDispatchStatus,
+        externalReference: tickets.externalReference,
         createdAt: tickets.createdAt,
       })
       .from(tickets)
