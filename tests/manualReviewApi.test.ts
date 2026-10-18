@@ -1,12 +1,26 @@
 import { randomUUID } from "node:crypto";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import { POST as postClassification } from "@/app/api/tickets/[id]/classification/route";
 import { POST as postRerun } from "@/app/api/tickets/[id]/classification/rerun/route";
 import { POST as postOverride } from "@/app/api/tickets/[id]/priority-override/route";
 import { POST as postStatus } from "@/app/api/tickets/[id]/status/route";
+import { teamMemberships, users } from "@/infra/db/schema";
 import { connectTestDb } from "./support/db";
 import { dispatchFixtures } from "./support/dispatchFixtures";
 import { testDatabaseUrl } from "./support/testDatabaseUrl";
+
+const session = vi.hoisted(() => ({ user: null as { id: string } | null }));
+vi.mock("@/infra/auth/session", () => ({
+  getRequestUser: async () => session.user,
+}));
 
 const API_KEY = "test-api-key";
 const { sql, db } = connectTestDb();
@@ -16,14 +30,30 @@ beforeAll(() => {
   process.env.DATABASE_URL = testDatabaseUrl;
   process.env.FLOWDESK_API_KEY = API_KEY;
 });
+beforeEach(async () => {
+  session.user = await newUser(["it_systems"]);
+});
 afterAll(() => sql.end());
+
+async function newUser(teams: "it_systems"[] = []) {
+  const [row] = await db
+    .insert(users)
+    .values({ name: "U", email: `${randomUUID()}@t.example`, department: "QA" })
+    .returning();
+  if (teams.length) {
+    await db
+      .insert(teamMemberships)
+      .values(teams.map((team) => ({ userId: row!.id, team })));
+  }
+  return row!;
+}
 
 type Handler = typeof postClassification;
 function call(
   handler: Handler,
   id: string,
   body?: unknown,
-  headers: Record<string, string> = { "X-API-Key": API_KEY },
+  headers: Record<string, string> = {},
 ) {
   return handler(
     new Request("http://localhost/api/tickets/x", {
@@ -36,7 +66,7 @@ function call(
 }
 
 describe("manual Ticket action endpoints", () => {
-  it("answer 401 without the API key and 404 for an unknown Ticket", async () => {
+  it("answer 401 without a session and 404 for an unknown Ticket", async () => {
     const valid: [Handler, unknown][] = [
       [
         postClassification,
@@ -53,7 +83,9 @@ describe("manual Ticket action endpoints", () => {
       [postStatus, { status: "resolved" }],
     ];
     for (const [handler, body] of valid) {
-      expect((await call(handler, randomUUID(), body, {})).status).toBe(401);
+      session.user = null;
+      expect((await call(handler, randomUUID(), body)).status).toBe(401);
+      session.user = await newUser(["it_systems"]);
       expect((await call(handler, randomUUID(), body)).status).toBe(404);
       expect((await call(handler, "not-a-uuid", body)).status).toBe(404);
     }
@@ -101,11 +133,41 @@ describe("manual Ticket action endpoints", () => {
     const bad = await postClassification(
       new Request("http://localhost/x", {
         method: "POST",
-        headers: { "X-API-Key": API_KEY },
         body: "nope",
       }),
       { params: Promise.resolve({ id: ticket.id }) },
     );
     expect(bad.status).toBe(422);
+  });
+
+  it("answers 403 to the API key on every Manual Action route", async () => {
+    const ticket = await classifiedTicket();
+    session.user = null;
+    for (const [handler, body] of [
+      [postClassification, { category: "erp" }],
+      [postRerun, undefined],
+      [postOverride, { priority: "low", reason: "r" }],
+      [postStatus, { status: "resolved" }],
+    ] as [Handler, unknown][]) {
+      const response = await call(handler, ticket.id, body, {
+        "X-API-Key": API_KEY,
+      });
+      expect(response.status).toBe(403);
+    }
+  });
+
+  it("answers 403 to a Requester-only User and changes nothing", async () => {
+    const ticket = await classifiedTicket();
+    session.user = { id: ticket.requesterId };
+
+    const response = await call(postStatus, ticket.id, { status: "resolved" });
+
+    expect(response.status).toBe(403);
+    expect((await response.json()).error.code).toBe("forbidden");
+    const override = await call(postOverride, ticket.id, {
+      priority: "low",
+      reason: "r",
+    });
+    expect(override.status).toBe(403);
   });
 });

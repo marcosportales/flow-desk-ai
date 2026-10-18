@@ -1,10 +1,24 @@
 import { randomUUID } from "node:crypto";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import { POST as postRetry } from "@/app/api/dispatches/[id]/retry/route";
+import { teamMemberships, users } from "@/infra/db/schema";
 import { connectTestDb } from "./support/db";
 import { dispatchFixtures } from "./support/dispatchFixtures";
 import { startN8nStub } from "./support/n8nStub";
 import { testDatabaseUrl } from "./support/testDatabaseUrl";
+
+const session = vi.hoisted(() => ({ user: null as { id: string } | null }));
+vi.mock("@/infra/auth/session", () => ({
+  getRequestUser: async () => session.user,
+}));
 
 const API_KEY = "test-api-key";
 const { sql, db } = connectTestDb();
@@ -14,13 +28,27 @@ beforeAll(() => {
   process.env.DATABASE_URL = testDatabaseUrl;
   process.env.FLOWDESK_API_KEY = API_KEY;
 });
+beforeEach(async () => {
+  const [operator] = await db
+    .insert(users)
+    .values({
+      name: "Op",
+      email: `${randomUUID()}@t.example`,
+      department: "QA",
+    })
+    .returning();
+  await db
+    .insert(teamMemberships)
+    .values({ userId: operator!.id, team: "it_systems" });
+  session.user = operator!;
+});
 afterAll(() => sql.end());
 
 function retry(id: string, headers: Record<string, string> = {}) {
   return postRetry(
     new Request(`http://localhost/api/dispatches/${id}/retry`, {
       method: "POST",
-      headers: { "X-API-Key": API_KEY, ...headers },
+      headers,
     }),
     { params: Promise.resolve({ id }) },
   );
@@ -92,10 +120,29 @@ describe("POST /api/dispatches/:id/retry", () => {
     },
   );
 
-  it("answers 404 for an unknown id and 401 without the API key", async () => {
+  it("answers 404 for an unknown id and 401 without a session", async () => {
     expect((await retry(randomUUID())).status).toBe(404);
-    expect((await retry(randomUUID(), { "X-API-Key": "nope" })).status).toBe(
-      401,
-    );
+    session.user = null;
+    expect((await retry(randomUUID())).status).toBe(401);
+  });
+
+  it("answers 403 to the API key and retries nothing", async () => {
+    const before = await failedDispatch();
+    session.user = null;
+
+    const response = await retry(before.dispatch.id, { "X-API-Key": API_KEY });
+
+    expect(response.status).toBe(403);
+    expect((await snapshot(before.ticket.id)).dispatch.status).toBe("failed");
+  });
+
+  it("answers 403 to a Requester-only User and retries nothing", async () => {
+    const before = await failedDispatch();
+    session.user = { id: before.ticket.requesterId };
+
+    const response = await retry(before.dispatch.id);
+
+    expect(response.status).toBe(403);
+    expect((await snapshot(before.ticket.id)).dispatch.status).toBe("failed");
   });
 });
