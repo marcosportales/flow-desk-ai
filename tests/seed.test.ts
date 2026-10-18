@@ -68,6 +68,31 @@ describe("seedDatabase", () => {
     }
   });
 
+  it("attributes seeded events to a User, the system or nobody else", async () => {
+    await seedDatabase(db);
+    const seeded = await seededRows();
+    const operatorIds = new Set(
+      (
+        await db
+          .select({ userId: teamMemberships.userId })
+          .from(teamMemberships)
+      ).map((m) => m.userId),
+    );
+
+    expect(new Set(seeded.events.map((e) => e.actor))).toEqual(
+      new Set(["system", "user"]),
+    );
+    for (const event of seeded.events) {
+      if (event.actor !== "user") continue;
+      const ticket = seeded.tickets.find((t) => t.id === event.ticketId)!;
+      expect(
+        event.type === "ticket_created"
+          ? event.actorUserId === ticket.requesterId
+          : operatorIds.has(event.actorUserId!),
+      ).toBe(true);
+    }
+  });
+
   it("seeds Users with no Team, one Team and two Teams", async () => {
     await seedDatabase(db);
     const memberships = await db

@@ -1,3 +1,4 @@
+import { type Actor, actorColumns } from "@/domain/actor";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import {
@@ -23,6 +24,7 @@ export async function changeTicketStatus(
   db: Db,
   ticketId: string,
   input: unknown,
+  actor: Actor,
 ): Promise<ChangeStatusResult> {
   const parsed = StatusChange.safeParse(input);
   if (!parsed.success) {
@@ -50,7 +52,7 @@ export async function changeTicketStatus(
     await tx.insert(ticketEvents).values({
       ticketId: ticket.id,
       type: "status_changed",
-      actor: "human",
+      ...actorColumns(actor),
       data: { from: ticket.status, to: parsed.data.status },
     });
     return { kind: "ok" };

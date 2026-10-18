@@ -5,6 +5,7 @@ import { FakeClassifier } from "@/infra/classifier/fake";
 import { signBody, verifySignature } from "@/infra/crypto/hmac";
 import { users } from "@/infra/db/schema";
 import { classifyTicket } from "@/services/classifyTicket";
+import { integrationActor } from "@/domain/actor";
 import { createTicket } from "@/services/createTicket";
 import { dispatchTicket } from "@/services/dispatchTicket";
 import { runNextJob } from "@/worker/runner";
@@ -70,13 +71,17 @@ describe("Scenario A: a classified ERP blocker is dispatched and confirmed", () 
         department: "Finance",
       })
       .returning();
-    const created = await createTicket(db, {
-      requesterId: requester!.id,
-      idempotencyKey: randomUUID(),
-      title: "Cannot process invoices in SAP",
-      description:
-        "I haven't been able to access SAP since this morning, and I need to process some invoices.",
-    });
+    const created = await createTicket(
+      db,
+      {
+        requesterId: requester!.id,
+        idempotencyKey: randomUUID(),
+        title: "Cannot process invoices in SAP",
+        description:
+          "I haven't been able to access SAP since this morning, and I need to process some invoices.",
+      },
+      integrationActor,
+    );
     if (created.kind !== "created") throw new Error("ticket not created");
     const ticketId = created.ticket.id;
 
@@ -120,13 +125,13 @@ describe("Scenario A: a classified ERP blocker is dispatched and confirmed", () 
       n8nExecutionId: "stub-exec-1",
     });
     expect(s.events.map((e) => [e.type, e.actor])).toEqual([
-      ["ticket_created", "system"],
-      ["classification_attempted", "ai"],
-      ["classified", "ai"],
+      ["ticket_created", "integration"],
+      ["classification_attempted", "system"],
+      ["classified", "system"],
       ["priority_computed", "system"],
       ["dispatch_created", "system"],
       ["dispatch_attempted", "system"],
-      ["dispatch_succeeded", "n8n"],
+      ["dispatch_succeeded", "system"],
     ]);
   });
 

@@ -11,6 +11,7 @@ import {
   tickets,
 } from "@/infra/db/schema";
 import { classifyTicket } from "@/services/classifyTicket";
+import { integrationActor } from "@/domain/actor";
 import { createTicket } from "@/services/createTicket";
 import type { DispatchConfig } from "@/infra/n8n/config";
 import { dispatchTicket } from "@/services/dispatchTicket";
@@ -44,12 +45,16 @@ export function dispatchFixtures(db: TestDb, sql: Sql) {
         department: "QA",
       })
       .returning();
-    const result = await createTicket(db, {
-      requesterId: requester!.id,
-      idempotencyKey: randomUUID(),
-      title: "SAP is down",
-      description: ERP_BLOCKER,
-    });
+    const result = await createTicket(
+      db,
+      {
+        requesterId: requester!.id,
+        idempotencyKey: randomUUID(),
+        title: "SAP is down",
+        description: ERP_BLOCKER,
+      },
+      integrationActor,
+    );
     if (result.kind !== "created") throw new Error("ticket not created");
     await classifyTicket(db, new FakeClassifier("valid"), {
       ticketId: result.ticket.id,

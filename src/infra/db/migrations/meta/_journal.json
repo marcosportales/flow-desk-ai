@@ -15,6 +15,13 @@
       "when": 1792285466486,
       "tag": "0001_better_auth_users",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792292188092,
+      "tag": "0002_ticket_event_actor_user",
+      "breakpoints": true
     }
   ]
 }

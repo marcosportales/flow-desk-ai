@@ -1,3 +1,4 @@
+import { integrationActor } from "@/domain/actor";
 import { rejectUnlessAuthorized } from "@/infra/api/auth";
 import { errorResponse } from "@/infra/api/errors";
 import { getDb } from "@/infra/db/client";
@@ -60,7 +61,11 @@ export async function POST(request: Request) {
     return errorResponse(422, "validation_error", "Body must be a JSON object");
   }
 
-  const result = await createTicket(getDb(), { ...body, idempotencyKey });
+  const result = await createTicket(
+    getDb(),
+    { ...body, idempotencyKey },
+    integrationActor,
+  );
   switch (result.kind) {
     case "created":
       return Response.json(

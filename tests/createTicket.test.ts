@@ -5,6 +5,7 @@ import postgres from "postgres";
 import { afterAll, describe, expect, it } from "vitest";
 import * as schema from "@/infra/db/schema";
 import { jobs, users, ticketEvents, tickets } from "@/infra/db/schema";
+import { integrationActor, userActor } from "@/domain/actor";
 import { createTicket } from "@/services/createTicket";
 import { connectTestDb } from "./support/db";
 import { testDatabaseUrl } from "./support/testDatabaseUrl";
@@ -32,11 +33,15 @@ const request = {
 describe("createTicket", () => {
   it("creates the Ticket, its ticket_created event and a classify job together", async () => {
     const requester = await newRequester();
-    const result = await createTicket(db, {
-      requesterId: requester.id,
-      idempotencyKey: randomUUID(),
-      ...request,
-    });
+    const result = await createTicket(
+      db,
+      {
+        requesterId: requester.id,
+        idempotencyKey: randomUUID(),
+        ...request,
+      },
+      userActor(requester.id),
+    );
 
     expect(result.kind).toBe("created");
     if (result.kind !== "created") return;
@@ -54,7 +59,8 @@ describe("createTicket", () => {
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({
       type: "ticket_created",
-      actor: "system",
+      actor: "user",
+      actorUserId: requester.id,
     });
 
     const queued = await db
@@ -65,6 +71,21 @@ describe("createTicket", () => {
     expect(queued[0]).toMatchObject({ kind: "classify", status: "queued" });
   });
 
+  it("records the Integration as the actor of an API-submitted Request", async () => {
+    const requester = await newRequester();
+    const result = await createTicket(
+      db,
+      { requesterId: requester.id, idempotencyKey: randomUUID(), ...request },
+      integrationActor,
+    );
+    if (result.kind !== "created") throw new Error("expected created");
+    const [event] = await db
+      .select()
+      .from(ticketEvents)
+      .where(eq(ticketEvents.ticketId, result.ticket.id));
+    expect(event).toMatchObject({ actor: "integration", actorUserId: null });
+  });
+
   it("returns the same Ticket for a Duplicate Submission", async () => {
     const requester = await newRequester();
     const input = {
@@ -72,8 +93,8 @@ describe("createTicket", () => {
       idempotencyKey: randomUUID(),
       ...request,
     };
-    const first = await createTicket(db, input);
-    const second = await createTicket(db, input);
+    const first = await createTicket(db, input, integrationActor);
+    const second = await createTicket(db, input, integrationActor);
 
     expect(first.kind).toBe("created");
     expect(second.kind).toBe("replayed");
@@ -104,9 +125,9 @@ describe("createTicket", () => {
     try {
       const poolDb = drizzle(pool, { schema });
       const results = await Promise.all([
-        createTicket(poolDb, input),
-        createTicket(poolDb, input),
-        createTicket(poolDb, input),
+        createTicket(poolDb, input, integrationActor),
+        createTicket(poolDb, input, integrationActor),
+        createTicket(poolDb, input, integrationActor),
       ]);
 
       expect(results.filter((r) => r.kind === "created")).toHaveLength(1);
@@ -119,17 +140,25 @@ describe("createTicket", () => {
   it("reports a conflict when the key is reused with a different body", async () => {
     const requester = await newRequester();
     const idempotencyKey = randomUUID();
-    await createTicket(db, {
-      requesterId: requester.id,
-      idempotencyKey,
-      ...request,
-    });
-    const result = await createTicket(db, {
-      requesterId: requester.id,
-      idempotencyKey,
-      ...request,
-      title: "A different request",
-    });
+    await createTicket(
+      db,
+      {
+        requesterId: requester.id,
+        idempotencyKey,
+        ...request,
+      },
+      integrationActor,
+    );
+    const result = await createTicket(
+      db,
+      {
+        requesterId: requester.id,
+        idempotencyKey,
+        ...request,
+        title: "A different request",
+      },
+      integrationActor,
+    );
 
     expect(result.kind).toBe("conflict");
   });
@@ -138,16 +167,24 @@ describe("createTicket", () => {
     const a = await newRequester();
     const b = await newRequester();
     const idempotencyKey = randomUUID();
-    const first = await createTicket(db, {
-      requesterId: a.id,
-      idempotencyKey,
-      ...request,
-    });
-    const second = await createTicket(db, {
-      requesterId: b.id,
-      idempotencyKey,
-      ...request,
-    });
+    const first = await createTicket(
+      db,
+      {
+        requesterId: a.id,
+        idempotencyKey,
+        ...request,
+      },
+      integrationActor,
+    );
+    const second = await createTicket(
+      db,
+      {
+        requesterId: b.id,
+        idempotencyKey,
+        ...request,
+      },
+      integrationActor,
+    );
 
     expect(first.kind).toBe("created");
     expect(second.kind).toBe("created");
@@ -162,22 +199,30 @@ describe("createTicket", () => {
     ["empty key", { idempotencyKey: "" }],
   ])("rejects invalid input: %s", async (_name, override) => {
     const requester = await newRequester();
-    const result = await createTicket(db, {
-      requesterId: requester.id,
-      idempotencyKey: randomUUID(),
-      ...request,
-      ...override,
-    });
+    const result = await createTicket(
+      db,
+      {
+        requesterId: requester.id,
+        idempotencyKey: randomUUID(),
+        ...request,
+        ...override,
+      },
+      integrationActor,
+    );
 
     expect(result.kind).toBe("invalid");
   });
 
   it("reports an unknown Requester as invalid", async () => {
-    const result = await createTicket(db, {
-      requesterId: randomUUID(),
-      idempotencyKey: randomUUID(),
-      ...request,
-    });
+    const result = await createTicket(
+      db,
+      {
+        requesterId: randomUUID(),
+        idempotencyKey: randomUUID(),
+        ...request,
+      },
+      integrationActor,
+    );
 
     expect(result.kind).toBe("invalid");
   });

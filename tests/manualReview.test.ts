@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { asc, eq } from "drizzle-orm";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { FakeClassifier } from "@/infra/classifier/fake";
 import {
   dispatches,
@@ -12,6 +12,7 @@ import {
 import { changeTicketStatus } from "@/services/changeTicketStatus";
 import { classifyManually } from "@/services/classifyManually";
 import { classifyTicket } from "@/services/classifyTicket";
+import { type Actor, integrationActor, userActor } from "@/domain/actor";
 import { createTicket } from "@/services/createTicket";
 import { overridePriority } from "@/services/overridePriority";
 import { rerunClassification } from "@/services/rerunClassification";
@@ -22,6 +23,21 @@ import { dispatchFixtures } from "./support/dispatchFixtures";
 const { sql, db } = connectTestDb();
 const { classifiedTicket } = dispatchFixtures(db, sql);
 afterAll(() => sql.end());
+
+let operator: Actor;
+let operatorId: string;
+beforeAll(async () => {
+  const [user] = await db
+    .insert(users)
+    .values({
+      name: "Op",
+      email: `${randomUUID()}@t.example`,
+      department: "QA",
+    })
+    .returning();
+  operatorId = user!.id;
+  operator = userActor(operatorId);
+});
 
 const dispatchesOf = (ticketId: string) =>
   db
@@ -43,12 +59,16 @@ async function newTicket(title: string) {
     .insert(users)
     .values({ name: "R", email: `${randomUUID()}@t.example`, department: "QA" })
     .returning();
-  const result = await createTicket(db, {
-    requesterId: requester!.id,
-    idempotencyKey: randomUUID(),
-    title,
-    description: "A request the model cannot make sense of at all.",
-  });
+  const result = await createTicket(
+    db,
+    {
+      requesterId: requester!.id,
+      idempotencyKey: randomUUID(),
+      title,
+      description: "A request the model cannot make sense of at all.",
+    },
+    integrationActor,
+  );
   if (result.kind !== "created") throw new Error("not created");
   return result.ticket;
 }
@@ -81,7 +101,7 @@ describe("classifyManually", () => {
     const ticket = await needsReviewTicket();
     expect(ticket.classificationState).toBe("needs_review");
 
-    const result = await classifyManually(db, ticket.id, facts);
+    const result = await classifyManually(db, ticket.id, facts, operator);
 
     expect(result.kind).toBe("ok");
     expect(await ticketOf(ticket.id)).toMatchObject({
@@ -104,7 +124,7 @@ describe("classifyManually", () => {
       .where(eq(jobs.dispatchId, dispatch!.id));
     expect(queued.map((j) => j.status)).toEqual(["queued"]);
     const types = (await eventsOf(ticket.id)).map((e) => [e.type, e.actor]);
-    expect(types).toContainEqual(["classified", "human"]);
+    expect(types).toContainEqual(["classified", "user"]);
     expect(types).toContainEqual(["priority_computed", "system"]);
     expect(types).toContainEqual(["dispatch_created", "system"]);
   });
@@ -112,11 +132,16 @@ describe("classifyManually", () => {
   it("keeps a non-dispatchable Category in review without a Dispatch", async () => {
     const ticket = await needsReviewTicket();
 
-    const result = await classifyManually(db, ticket.id, {
-      ...facts,
-      category: "inquiry",
-      blocks_work: false,
-    });
+    const result = await classifyManually(
+      db,
+      ticket.id,
+      {
+        ...facts,
+        category: "inquiry",
+        blocks_work: false,
+      },
+      operator,
+    );
 
     expect(result.kind).toBe("ok");
     expect(await ticketOf(ticket.id)).toMatchObject({
@@ -131,18 +156,26 @@ describe("classifyManually", () => {
     const ticket = await classifiedTicket(); // ERP blocker → urgent, it_systems
     const [first] = await dispatchesOf(ticket.id);
 
-    const result = await classifyManually(db, ticket.id, {
-      ...facts,
-      category: "data",
-      blocks_work: false,
-      impact_scope: "individual",
-    });
+    const result = await classifyManually(
+      db,
+      ticket.id,
+      {
+        ...facts,
+        category: "data",
+        blocks_work: false,
+        impact_scope: "individual",
+      },
+      operator,
+    );
 
     expect(result.kind).toBe("ok");
     const all = await dispatchesOf(ticket.id);
     expect(all).toHaveLength(2);
     expect(all[0]).toMatchObject({ id: first!.id, status: "failed" });
     expect(all[0]!.supersededBy).toBe(all[1]!.id);
+    expect(
+      (await eventsOf(ticket.id)).find((e) => e.type === "dispatch_superseded"),
+    ).toMatchObject({ actor: "user", actorUserId: operatorId });
     expect(all[1]).toMatchObject({
       status: "pending",
       team: "data_team",
@@ -157,12 +190,17 @@ describe("classifyManually", () => {
   it("creates no new Dispatch when the Team and route are unchanged", async () => {
     const ticket = await classifiedTicket();
 
-    await classifyManually(db, ticket.id, {
-      ...facts,
-      category: "erp",
-      summary: "SAP down, corrected summary",
-      impact_scope: "individual",
-    });
+    await classifyManually(
+      db,
+      ticket.id,
+      {
+        ...facts,
+        category: "erp",
+        summary: "SAP down, corrected summary",
+        impact_scope: "individual",
+      },
+      operator,
+    );
 
     expect(await dispatchesOf(ticket.id)).toHaveLength(1);
     expect((await ticketOf(ticket.id)).summary).toBe(
@@ -173,16 +211,23 @@ describe("classifyManually", () => {
   it("rejects invalid facts and unknown Tickets", async () => {
     const ticket = await needsReviewTicket();
     expect(
-      await classifyManually(db, ticket.id, { ...facts, category: "bogus" }),
+      await classifyManually(
+        db,
+        ticket.id,
+        { ...facts, category: "bogus" },
+        operator,
+      ),
     ).toMatchObject({ kind: "invalid" });
-    expect(await classifyManually(db, randomUUID(), facts)).toEqual({
+    expect(await classifyManually(db, randomUUID(), facts, operator)).toEqual({
       kind: "not_found",
     });
   });
 
   it("rejects a pending Ticket", async () => {
     const created = await newTicket("Fresh one");
-    expect(await classifyManually(db, created.id, facts)).toMatchObject({
+    expect(
+      await classifyManually(db, created.id, facts, operator),
+    ).toMatchObject({
       kind: "illegal_state",
     });
   });
@@ -193,7 +238,12 @@ describe("overridePriority", () => {
     const ticket = await classifiedTicket();
     for (const reason of [undefined, "", "   "]) {
       expect(
-        await overridePriority(db, ticket.id, { priority: "low", reason }),
+        await overridePriority(
+          db,
+          ticket.id,
+          { priority: "low", reason },
+          operator,
+        ),
       ).toMatchObject({ kind: "invalid" });
     }
     expect((await ticketOf(ticket.id)).priority).toBe("urgent");
@@ -202,10 +252,15 @@ describe("overridePriority", () => {
   it("overrides, keeps the computed Priority and creates a new Dispatch when the route changes", async () => {
     const ticket = await classifiedTicket(); // urgent route
 
-    const result = await overridePriority(db, ticket.id, {
-      priority: "normal",
-      reason: "Requester has a workaround",
-    });
+    const result = await overridePriority(
+      db,
+      ticket.id,
+      {
+        priority: "normal",
+        reason: "Requester has a workaround",
+      },
+      operator,
+    );
 
     expect(result.kind).toBe("ok");
     expect(await ticketOf(ticket.id)).toMatchObject({
@@ -220,7 +275,8 @@ describe("overridePriority", () => {
     expect(
       (await eventsOf(ticket.id)).find((e) => e.type === "priority_overridden"),
     ).toMatchObject({
-      actor: "human",
+      actor: "user",
+      actorUserId: operatorId,
       data: {
         from: "urgent",
         to: "normal",
@@ -231,22 +287,42 @@ describe("overridePriority", () => {
 
   it("creates no Dispatch when the route stays the same", async () => {
     const ticket = await classifiedTicket();
-    await overridePriority(db, ticket.id, { priority: "high", reason: "a" });
+    await overridePriority(
+      db,
+      ticket.id,
+      { priority: "high", reason: "a" },
+      operator,
+    );
     expect(await dispatchesOf(ticket.id)).toHaveLength(2); // urgent → standard
 
-    await overridePriority(db, ticket.id, { priority: "low", reason: "b" });
+    await overridePriority(
+      db,
+      ticket.id,
+      { priority: "low", reason: "b" },
+      operator,
+    );
 
     expect(await dispatchesOf(ticket.id)).toHaveLength(2); // standard → standard
   });
 
   it("clears the override when set back to the computed Priority", async () => {
     const ticket = await classifiedTicket();
-    await overridePriority(db, ticket.id, { priority: "low", reason: "x" });
+    await overridePriority(
+      db,
+      ticket.id,
+      { priority: "low", reason: "x" },
+      operator,
+    );
 
-    await overridePriority(db, ticket.id, {
-      priority: "urgent",
-      reason: "Back to normal",
-    });
+    await overridePriority(
+      db,
+      ticket.id,
+      {
+        priority: "urgent",
+        reason: "Back to normal",
+      },
+      operator,
+    );
 
     expect(await ticketOf(ticket.id)).toMatchObject({
       priority: "urgent",
@@ -257,7 +333,12 @@ describe("overridePriority", () => {
   it("only applies to a classified Ticket", async () => {
     const ticket = await needsReviewTicket();
     expect(
-      await overridePriority(db, ticket.id, { priority: "low", reason: "x" }),
+      await overridePriority(
+        db,
+        ticket.id,
+        { priority: "low", reason: "x" },
+        operator,
+      ),
     ).toMatchObject({ kind: "illegal_state" });
   });
 });
@@ -266,25 +347,36 @@ describe("changeTicketStatus", () => {
   it("moves open → resolved and records the event, without a Dispatch", async () => {
     const ticket = await needsReviewTicket();
 
-    const result = await changeTicketStatus(db, ticket.id, {
-      status: "resolved",
-    });
+    const result = await changeTicketStatus(
+      db,
+      ticket.id,
+      {
+        status: "resolved",
+      },
+      operator,
+    );
 
     expect(result.kind).toBe("ok");
     expect((await ticketOf(ticket.id)).status).toBe("resolved");
     expect(await dispatchesOf(ticket.id)).toHaveLength(0);
     expect((await eventsOf(ticket.id)).at(-1)).toMatchObject({
       type: "status_changed",
-      actor: "human",
+      actor: "user",
+      actorUserId: operatorId,
       data: { from: "open", to: "resolved" },
     });
   });
 
   it("rejects an illegal transition", async () => {
     const ticket = await needsReviewTicket();
-    const result = await changeTicketStatus(db, ticket.id, {
-      status: "closed",
-    });
+    const result = await changeTicketStatus(
+      db,
+      ticket.id,
+      {
+        status: "closed",
+      },
+      operator,
+    );
     expect(result).toMatchObject({ kind: "illegal_transition" });
     expect((await ticketOf(ticket.id)).status).toBe("open");
   });
@@ -292,7 +384,7 @@ describe("changeTicketStatus", () => {
   it("rejects an unknown status", async () => {
     const ticket = await needsReviewTicket();
     expect(
-      await changeTicketStatus(db, ticket.id, { status: "bogus" }),
+      await changeTicketStatus(db, ticket.id, { status: "bogus" }, operator),
     ).toMatchObject({ kind: "invalid" });
   });
 });
@@ -301,10 +393,10 @@ describe("rerunClassification", () => {
   it("queues one classify job for a needs_review Ticket", async () => {
     const ticket = await needsReviewTicket();
 
-    expect(await rerunClassification(db, ticket.id)).toEqual({
+    expect(await rerunClassification(db, ticket.id, operator)).toEqual({
       kind: "queued",
     });
-    expect(await rerunClassification(db, ticket.id)).toEqual({
+    expect(await rerunClassification(db, ticket.id, operator)).toEqual({
       kind: "already_queued",
     });
 
@@ -315,13 +407,14 @@ describe("rerunClassification", () => {
     expect(rows.filter((j) => j.status === "queued")).toHaveLength(1);
     expect((await eventsOf(ticket.id)).at(-1)).toMatchObject({
       type: "classification_rerun_requested",
-      actor: "human",
+      actor: "user",
+      actorUserId: operatorId,
     });
   });
 
   it("is refused unless the Ticket needs review", async () => {
     const ticket = await classifiedTicket();
-    expect(await rerunClassification(db, ticket.id)).toMatchObject({
+    expect(await rerunClassification(db, ticket.id, operator)).toMatchObject({
       kind: "not_rerunnable",
     });
   });
@@ -331,9 +424,14 @@ describe("retryDispatch on a superseded Dispatch", () => {
   it("is refused", async () => {
     const ticket = await classifiedTicket();
     const [first] = await dispatchesOf(ticket.id);
-    await overridePriority(db, ticket.id, { priority: "low", reason: "x" });
+    await overridePriority(
+      db,
+      ticket.id,
+      { priority: "low", reason: "x" },
+      operator,
+    );
 
-    expect(await retryDispatch(db, first!.id)).toMatchObject({
+    expect(await retryDispatch(db, first!.id, operator)).toMatchObject({
       kind: "not_retryable",
     });
   });

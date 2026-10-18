@@ -372,7 +372,7 @@ export default async function TicketDetailPage({
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-medium">{label(e.type)}</span>
                 <span className="text-xs text-muted-foreground">
-                  {e.actor} · {when(e.createdAt)}
+                  {e.actorLabel} · {when(e.createdAt)}
                 </span>
               </div>
               <Json value={e.data} />

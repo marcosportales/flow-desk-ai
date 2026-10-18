@@ -16,9 +16,9 @@ export async function POST(
     return errorResponse(404, "not_found", "Unknown dispatch");
   }
   const db = getDb();
-  const rejected = await rejectUnlessOperator(request, db, { dispatchId: id });
-  if (rejected) return rejected;
-  const result = await retryDispatch(db, id);
+  const operator = await rejectUnlessOperator(request, db, { dispatchId: id });
+  if ("response" in operator) return operator.response;
+  const result = await retryDispatch(db, id, operator.actor);
   switch (result.kind) {
     case "queued":
       return Response.json(

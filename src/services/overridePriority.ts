@@ -1,3 +1,4 @@
+import { type Actor, actorColumns } from "@/domain/actor";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { priorities } from "@/domain/priority";
@@ -21,6 +22,7 @@ export async function overridePriority(
   db: Db,
   ticketId: string,
   input: unknown,
+  actor: Actor,
 ): Promise<OverridePriorityResult> {
   const parsed = Override.safeParse(input);
   if (!parsed.success) {
@@ -59,7 +61,7 @@ export async function overridePriority(
     await tx.insert(ticketEvents).values({
       ticketId: ticket.id,
       type: "priority_overridden",
-      actor: "human",
+      ...actorColumns(actor),
       data: {
         from: ticket.priority,
         to: priority,
@@ -68,11 +70,12 @@ export async function overridePriority(
       },
     });
 
-    await rerouteDispatch(tx, ticket.id, {
-      category: ticket.category,
-      priority,
-      team: ticket.team,
-    });
+    await rerouteDispatch(
+      tx,
+      ticket.id,
+      { category: ticket.category, priority, team: ticket.team },
+      actor,
+    );
     return { kind: "ok" };
   });
 }

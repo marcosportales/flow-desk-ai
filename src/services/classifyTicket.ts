@@ -193,7 +193,7 @@ async function recordAttempts(
     await tx.insert(ticketEvents).values({
       ticketId,
       type: "classification_attempted",
-      actor: "ai",
+      actor: "system",
       data: {
         attemptNo,
         kind: a.kind,
@@ -257,7 +257,7 @@ async function applyClassification(
     {
       ticketId: ticket.id,
       type: "classified",
-      actor: "ai",
+      actor: "system",
       data: { ...facts, team },
     },
     {

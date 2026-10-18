@@ -201,6 +201,45 @@ describe("getTicketDetail", () => {
     expect(d.settled).toBe(false); // second Dispatch is still `sent`
   });
 
+  it("names the actor of each Ticket Event for the timeline", async () => {
+    const [operator] = await db
+      .insert(users)
+      .values({
+        name: "Olivia Operator",
+        email: `${randomUUID()}@test.example`,
+        department: "IT",
+      })
+      .returning();
+    const t = await insertTicket();
+    await db.insert(ticketEvents).values([
+      {
+        ticketId: t.id,
+        type: "ticket_created",
+        actor: "integration",
+        data: {},
+      },
+      { ticketId: t.id, type: "classified", actor: "system", data: {} },
+      {
+        ticketId: t.id,
+        type: "status_changed",
+        actor: "user",
+        actorUserId: operator!.id,
+        data: {},
+      },
+      // Written before events named their actor.
+      { ticketId: t.id, type: "classified", actor: "human", data: {} },
+    ]);
+
+    const result = await getTicketDetail(db, t.id);
+    if (result.kind !== "ok") throw new Error("expected ok");
+    expect(result.detail.events.map((e) => e.actorLabel)).toEqual([
+      "Integration",
+      "System",
+      "Olivia Operator",
+      "A person",
+    ]);
+  });
+
   it("is settled once classified and the latest Dispatch is terminal", async () => {
     const t = await insertTicket({ classificationState: "needs_review" });
     await db.insert(dispatches).values({

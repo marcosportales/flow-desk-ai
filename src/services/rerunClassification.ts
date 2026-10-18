@@ -1,3 +1,4 @@
+import { type Actor, actorColumns } from "@/domain/actor";
 import { eq } from "drizzle-orm";
 import { jobs, ticketEvents, tickets } from "@/infra/db/schema";
 import type { Db } from "./createTicket";
@@ -14,6 +15,7 @@ export type RerunResult =
 export async function rerunClassification(
   db: Db,
   ticketId: string,
+  actor: Actor,
 ): Promise<RerunResult> {
   return db.transaction(async (tx): Promise<RerunResult> => {
     const [ticket] = await tx
@@ -37,7 +39,7 @@ export async function rerunClassification(
     await tx.insert(ticketEvents).values({
       ticketId: ticket.id,
       type: "classification_rerun_requested",
-      actor: "human",
+      ...actorColumns(actor),
       data: {},
     });
     return { kind: "queued" };

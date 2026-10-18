@@ -3,6 +3,12 @@ import { hashPassword } from "better-auth/crypto";
 import { eq, inArray } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 import { demoPassword } from "../auth/demo";
+import {
+  type Actor,
+  actorColumns,
+  systemActor,
+  userActor,
+} from "../../domain/actor";
 import type { Team } from "../../domain/routing";
 import * as schema from "./schema";
 import {
@@ -310,8 +316,16 @@ export async function seedDatabase(db: Db) {
       }
     }
 
+    // Human-initiated events are attributed to an Operator of the Ticket's Team.
+    const operators = new Map<Team, string>();
+    for (const user of seedUsers) {
+      for (const team of user.teams ?? []) {
+        if (!operators.has(team)) operators.set(team, userIds.get(user.email)!);
+      }
+    }
+
     for (const seed of seedTickets) {
-      await seedTicket(tx, seed, userIds.get(seed.requester)!);
+      await seedTicket(tx, seed, userIds.get(seed.requester)!, operators);
     }
   });
 }
@@ -319,7 +333,12 @@ export async function seedDatabase(db: Db) {
 const DISPATCH_FAILED_ATTEMPTS = 3;
 const CALLBACK_TIMEOUT_MS = 60_000;
 
-async function seedTicket(db: Db, seed: SeedTicket, requesterId: string) {
+async function seedTicket(
+  db: Db,
+  seed: SeedTicket,
+  requesterId: string,
+  operators: Map<Team, string>,
+) {
   const createdAt = new Date(Date.now() - seed.hoursAgo * 3_600_000);
   // Each later event happens a minute after the previous one.
   let minute = 0;
@@ -366,11 +385,19 @@ async function seedTicket(db: Db, seed: SeedTicket, requesterId: string) {
   const events: (typeof ticketEvents.$inferInsert)[] = [];
   const event = (
     type: string,
-    actor: (typeof ticketEvents.$inferInsert)["actor"],
+    actor: Actor,
     data: Record<string, unknown> = {},
-  ) => events.push({ ticketId: ticket.id, type, actor, data, createdAt: at() });
+  ) =>
+    events.push({
+      ticketId: ticket.id,
+      type,
+      ...actorColumns(actor),
+      data,
+      createdAt: at(),
+    });
+  const operator = userActor(operators.get(ticket.team ?? "service_desk")!);
 
-  event("ticket_created", "system", { number: ticket.number });
+  event("ticket_created", userActor(requesterId), { number: ticket.number });
 
   if (!seed.attempts) {
     await db.insert(jobs).values({ kind: "classify", ticketId: ticket.id });
@@ -402,30 +429,34 @@ async function seedTicket(db: Db, seed: SeedTicket, requesterId: string) {
       latencyMs: 800 + i * 150,
       createdAt: at(),
     });
-    event("classification_attempted", "ai", { attempt_no: i + 1, outcome });
+    event("classification_attempted", systemActor, {
+      attempt_no: i + 1,
+      outcome,
+    });
   }
 
   if (classification) {
     if (classified) {
-      event("classified", "ai", {
+      event("classified", systemActor, {
         category: classification.category,
         team: classification.team,
       });
     }
-    event("priority_computed", "system", {
+    event("priority_computed", systemActor, {
       priority: classification.computedPriority,
       rule: classification.priorityRule,
     });
     if (seed.override) {
-      event("priority_overridden", "human", {
+      event("priority_overridden", operator, {
         from: classification.computedPriority,
         to: seed.override.priority,
         reason: seed.override.reason,
       });
     }
-    if (!classified) event("sent_to_review", "system", { reason: "inquiry" });
+    if (!classified)
+      event("sent_to_review", systemActor, { reason: "inquiry" });
   } else if (seed.attempts) {
-    event("sent_to_review", "system", { reason: "invalid_output" });
+    event("sent_to_review", systemActor, { reason: "invalid_output" });
   }
 
   if (classified && seed.dispatch && priority) {
@@ -446,7 +477,7 @@ async function seedTicket(db: Db, seed: SeedTicket, requesterId: string) {
       })
       .returning();
     const dispatchId = dispatch!.id;
-    event("dispatch_created", "system", { dispatch_id: dispatchId });
+    event("dispatch_created", systemActor, { dispatch_id: dispatchId });
 
     for (let attemptNo = 1; attemptNo <= attemptCount; attemptNo++) {
       const startedAt = at();
@@ -471,7 +502,7 @@ async function seedTicket(db: Db, seed: SeedTicket, requesterId: string) {
         finishedAt,
         createdAt: startedAt,
       });
-      event("dispatch_attempted", "system", {
+      event("dispatch_attempted", systemActor, {
         dispatch_id: dispatchId,
         attempt_no: attemptNo,
       });
@@ -488,17 +519,17 @@ async function seedTicket(db: Db, seed: SeedTicket, requesterId: string) {
       }
     }
     if (succeeded) {
-      event("dispatch_succeeded", "n8n", { dispatch_id: dispatchId });
+      event("dispatch_succeeded", systemActor, { dispatch_id: dispatchId });
     } else {
-      event("dispatch_failed", "system", { dispatch_id: dispatchId });
+      event("dispatch_failed", systemActor, { dispatch_id: dispatchId });
     }
   }
 
   if (seed.status === "resolved" || seed.status === "closed") {
-    event("status_changed", "human", { from: "open", to: "resolved" });
+    event("status_changed", operator, { from: "open", to: "resolved" });
   }
   if (seed.status === "closed") {
-    event("status_changed", "human", { from: "resolved", to: "closed" });
+    event("status_changed", operator, { from: "resolved", to: "closed" });
   }
 
   await db.insert(ticketEvents).values(events);
