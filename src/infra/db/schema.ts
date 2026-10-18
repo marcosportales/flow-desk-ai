@@ -17,6 +17,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { categories, impactScopes } from "../../domain/classification";
+import { notificationKinds } from "../../domain/notifications";
 import { priorities } from "../../domain/priority";
 import { routes, teams } from "../../domain/routing";
 import {
@@ -387,5 +388,32 @@ export const ticketEvents = pgTable(
       "ticket_events_actor_user_check",
       sql`(${t.actor}::text = 'user') = (${t.actorUserId} is not null)`,
     ),
+  ],
+);
+
+export const notificationKind = pgEnum("notification_kind", notificationKinds);
+
+// In-app Notifications. Each points at the Ticket Event that caused it, and a
+// User gets at most one per event, so a retry never notifies twice.
+export const notifications = pgTable(
+  "notifications",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    ticketId: uuid("ticket_id")
+      .notNull()
+      .references(() => tickets.id),
+    eventId: bigint("event_id", { mode: "number" })
+      .notNull()
+      .references(() => ticketEvents.id),
+    kind: notificationKind("kind").notNull(),
+    readAt: timestamp("read_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    unique("notifications_user_event_unique").on(t.userId, t.eventId),
+    index("notifications_user_created_at_idx").on(t.userId, t.createdAt.desc()),
   ],
 );

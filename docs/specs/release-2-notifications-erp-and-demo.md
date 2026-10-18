@@ -19,6 +19,8 @@
 
 - A `notifications` table and a bell in the header with an unread count and a list; opening one marks it read and links to the Ticket.
 - Created for: the Assignee when a Ticket is assigned or reassigned to them; the Team's Operators when a Ticket enters their queue; the Requester when their Ticket is assigned, resolved or closed.
+  - A Ticket enters a queue when classification first settles it (the AI routes it to a Team, or sends it to Manual Review at `service_desk`) and again whenever a manual classification changes its Team. A new Ticket still waiting for the AI is in no queue yet.
+  - The User who caused an event is never notified of it: an Operator who takes a Ticket gets no "assigned to you", and a Requester who closes their own Ticket gets no "closed". Releasing or reopening notifies no one.
 - The existing Dispatch to the Team channel is unchanged.
 
 **Accepted when:** each trigger creates exactly one Notification per recipient (no duplicates on retried requests), a User sees only their own, and unread counts update after reading.

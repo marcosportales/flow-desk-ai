@@ -1,6 +1,8 @@
 import { eq, max } from "drizzle-orm";
 import { z } from "zod";
 import { Classification } from "@/domain/classification";
+import { systemActor } from "@/domain/actor";
+import { ticketTeam } from "@/domain/permissions";
 import { evaluatePriority } from "@/domain/priority";
 import { isDispatchable, teamFor } from "@/domain/routing";
 import { transitionClassificationState } from "@/domain/transitions";
@@ -16,6 +18,7 @@ import {
 } from "@/infra/db/schema";
 import type { Db } from "./createTicket";
 import { createDispatch } from "./dispatchRouting";
+import { notifyQueueEntry } from "./notifications";
 
 // Classify handler: docs/plan/IMPLEMENTATION.md §2.5, §4.3. Invalid or
 // unavailable AI never triggers actions (Scenario D): the Ticket goes to
@@ -216,12 +219,16 @@ async function sendToReview(tx: Tx, ticket: TicketRow, reason: string) {
       .set({ classificationState: "needs_review" })
       .where(eq(tickets.id, ticket.id));
   }
-  await tx.insert(ticketEvents).values({
-    ticketId: ticket.id,
-    type: "sent_to_review",
-    actor: "system",
-    data: { reason },
-  });
+  const [event] = await tx
+    .insert(ticketEvents)
+    .values({
+      ticketId: ticket.id,
+      type: "sent_to_review",
+      actor: "system",
+      data: { reason },
+    })
+    .returning({ id: ticketEvents.id, ticketId: ticketEvents.ticketId });
+  await notifyQueueEntry(tx, event!, ticket, ticketTeam(ticket), systemActor);
 }
 
 async function applyClassification(
@@ -253,25 +260,34 @@ async function applyClassification(
     })
     .where(eq(tickets.id, ticket.id));
 
-  await tx.insert(ticketEvents).values([
-    {
-      ticketId: ticket.id,
-      type: "classified",
-      actor: "system",
-      data: { ...facts, team },
-    },
-    {
-      ticketId: ticket.id,
-      type: "priority_computed",
-      actor: "system",
-      data: evaluation,
-    },
-  ]);
+  const [classified] = await tx
+    .insert(ticketEvents)
+    .values([
+      {
+        ticketId: ticket.id,
+        type: "classified",
+        actor: "system",
+        data: { ...facts, team },
+      },
+      {
+        ticketId: ticket.id,
+        type: "priority_computed",
+        actor: "system",
+        data: evaluation,
+      },
+    ])
+    .returning({ id: ticketEvents.id, ticketId: ticketEvents.ticketId });
+  await notifyQueueEntry(tx, classified!, ticket, team, systemActor);
 
   if (!dispatchable) {
     await sendToReview(
       tx,
-      { ...ticket, classificationState: nextState },
+      {
+        ...ticket,
+        classificationState: nextState,
+        category: facts.category,
+        team,
+      },
       `Category "${facts.category}" is not dispatched automatically`,
     );
     return;
