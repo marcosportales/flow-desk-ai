@@ -13,7 +13,3 @@ The five default triage roles, used as Jira labels with the same names. See `doc
 ### Domain docs
 
 Single-context: `GLOSSARY.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
-
-### Working a Jira task
-
-To work, implement or ship a `SCRUM-<n>` ticket end to end, use the `ship-jira-task` skill.
