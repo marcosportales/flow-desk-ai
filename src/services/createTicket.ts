@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 import { z } from "zod";
+import { type Actor, actorColumns } from "@/domain/actor";
 import * as schema from "@/infra/db/schema";
 import { jobs, users, ticketEvents, tickets } from "@/infra/db/schema";
 
@@ -37,6 +38,7 @@ function hashRequest(input: {
 export async function createTicket(
   db: Db,
   rawInput: unknown,
+  actor: Actor,
 ): Promise<CreateTicketResult> {
   const parsed = createTicketInput.safeParse(rawInput);
   if (!parsed.success) {
@@ -89,7 +91,7 @@ export async function createTicket(
     await tx.insert(ticketEvents).values({
       ticketId: inserted.id,
       type: "ticket_created",
-      actor: "system",
+      ...actorColumns(actor),
       data: { requesterId: input.requesterId },
     });
     await tx.insert(jobs).values({ kind: "classify", ticketId: inserted.id });

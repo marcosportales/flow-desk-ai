@@ -75,11 +75,15 @@ export const jobStatus = pgEnum("job_status", [
   "done",
   "dead",
 ]);
+// `user`, `integration` and `system` are what new events record. `ai`, `human`
+// and `n8n` are legacy values on events written before the actor named a User.
 export const eventActor = pgEnum("event_actor", [
   "system",
   "ai",
   "human",
   "n8n",
+  "user",
+  "integration",
 ]);
 
 const createdAt = () =>
@@ -368,8 +372,16 @@ export const ticketEvents = pgTable(
     // (full list in IMPLEMENTATION.md §3).
     type: text("type").notNull(),
     actor: eventActor("actor").notNull(),
+    // The signed-in User behind a `user` event; null for every other actor.
+    actorUserId: uuid("actor_user_id").references(() => users.id),
     data: jsonb("data").notNull(),
     createdAt: createdAt(),
   },
-  (t) => [index("ticket_events_ticket_id_idx").on(t.ticketId, t.id)],
+  (t) => [
+    index("ticket_events_ticket_id_idx").on(t.ticketId, t.id),
+    check(
+      "ticket_events_actor_user_check",
+      sql`(${t.actor}::text = 'user') = (${t.actorUserId} is not null)`,
+    ),
+  ],
 );

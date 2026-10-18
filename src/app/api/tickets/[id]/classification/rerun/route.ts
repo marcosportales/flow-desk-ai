@@ -8,8 +8,10 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  return manualTicketAction(request, params, rerunClassification, {
-    withBody: false,
-    successStatus: 202,
-  });
+  return manualTicketAction(
+    request,
+    params,
+    (db, ticketId, _body, actor) => rerunClassification(db, ticketId, actor),
+    { withBody: false, successStatus: 202 },
+  );
 }

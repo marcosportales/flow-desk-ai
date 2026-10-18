@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { users } from "@/infra/db/schema";
+import { eq } from "drizzle-orm";
+import { ticketEvents, users } from "@/infra/db/schema";
 import { GET as listRequesters } from "@/app/api/requesters/route";
 import { GET as getTickets, POST as postTicket } from "@/app/api/tickets/route";
 import { connectTestDb } from "./support/db";
@@ -70,6 +71,27 @@ describe("POST /api/tickets", () => {
       title: body.title,
       classificationState: "pending",
     });
+  });
+
+  it("records the Integration as the actor of ticket_created", async () => {
+    const requester = await newRequester();
+    const response = await post(
+      {
+        requesterId: requester.id,
+        title: "Cannot log in",
+        description: "The ERP rejects my password since this morning.",
+      },
+      authed(),
+    );
+    const { ticket } = await response.json();
+
+    const events = await db
+      .select()
+      .from(ticketEvents)
+      .where(eq(ticketEvents.ticketId, ticket.id));
+    expect(events).toMatchObject([
+      { type: "ticket_created", actor: "integration", actorUserId: null },
+    ]);
   });
 
   it("returns 409 when the key is reused with a different body", async () => {

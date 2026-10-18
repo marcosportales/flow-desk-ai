@@ -9,7 +9,14 @@ import {
   it,
   vi,
 } from "vitest";
-import { dispatches, teamMemberships, users, tickets } from "@/infra/db/schema";
+import {
+  dispatches,
+  teamMemberships,
+  ticketEvents,
+  users,
+  tickets,
+} from "@/infra/db/schema";
+import { integrationActor } from "@/domain/actor";
 import { createTicket } from "@/services/createTicket";
 import { connectTestDb } from "./support/db";
 import { dispatchFixtures } from "./support/dispatchFixtures";
@@ -50,6 +57,7 @@ async function newOperator() {
     .insert(teamMemberships)
     .values({ userId: operator!.id, team: "service_desk" });
   requireUser.mockResolvedValue({ id: operator!.id });
+  return operator!.id;
 }
 
 async function newTicket() {
@@ -57,12 +65,16 @@ async function newTicket() {
     .insert(users)
     .values({ name: "R", email: `${randomUUID()}@t.example`, department: "QA" })
     .returning();
-  const result = await createTicket(db, {
-    requesterId: requester!.id,
-    idempotencyKey: randomUUID(),
-    title: "Status refresh",
-    description: "Changing status must show up without a reload.",
-  });
+  const result = await createTicket(
+    db,
+    {
+      requesterId: requester!.id,
+      idempotencyKey: randomUUID(),
+      title: "Status refresh",
+      description: "Changing status must show up without a reload.",
+    },
+    integrationActor,
+  );
   if (result.kind !== "created") throw new Error("not created");
   return result.ticket;
 }
@@ -107,6 +119,23 @@ describe("statusAction", () => {
     expect(row!.status).toBe("resolved");
     expect(revalidatePath).toHaveBeenCalledWith(`/tickets/${ticket.id}`);
     expect(revalidatePath).toHaveBeenCalledWith("/tickets");
+  });
+
+  it("records the signed-in User as the actor of the status change", async () => {
+    const ticket = await newTicket();
+    const operatorId = await newOperator();
+
+    await statusAction({ status: "idle" }, form(ticket.id, "resolved"));
+
+    const events = await db
+      .select()
+      .from(ticketEvents)
+      .where(eq(ticketEvents.ticketId, ticket.id));
+    expect(events.at(-1)).toMatchObject({
+      type: "status_changed",
+      actor: "user",
+      actorUserId: operatorId,
+    });
   });
 
   it("does not revalidate when the change is rejected", async () => {

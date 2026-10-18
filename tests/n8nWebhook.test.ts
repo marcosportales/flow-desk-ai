@@ -72,7 +72,7 @@ describe("POST /api/webhooks/n8n", () => {
     });
     expect(after.events.at(-1)).toMatchObject({
       type: "dispatch_succeeded",
-      actor: "n8n",
+      actor: "system",
       data: {
         dispatchId: before.dispatch.id,
         n8nExecutionId: "exec-1",
@@ -106,7 +106,7 @@ describe("POST /api/webhooks/n8n", () => {
     expect(after.jobs.map((j) => j.status).sort()).toEqual(["done", "queued"]);
     expect(after.events.at(-1)).toMatchObject({
       type: "dispatch_failed",
-      actor: "n8n",
+      actor: "system",
       data: { dispatchId: before.dispatch.id, error: "notifier answered 500" },
     });
   });
@@ -163,7 +163,7 @@ describe("POST /api/webhooks/n8n", () => {
     expect(after.events.slice(0, -1)).toEqual(settled.events);
     expect(after.events.at(-1)).toMatchObject({
       type: "dispatch_callback_ignored",
-      actor: "n8n",
+      actor: "system",
       data: {
         dispatchId: before.dispatch.id,
         outcome: "failed",

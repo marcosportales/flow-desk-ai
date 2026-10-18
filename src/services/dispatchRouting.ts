@@ -1,3 +1,4 @@
+import { type Actor, actorColumns } from "@/domain/actor";
 import { desc, eq, max } from "drizzle-orm";
 import type { Category } from "@/domain/classification";
 import type { Priority } from "@/domain/priority";
@@ -53,6 +54,7 @@ export async function rerouteDispatch(
   tx: Tx,
   ticketId: string,
   routing: Routing,
+  actor: Actor,
 ): Promise<void> {
   const [latest] = await tx
     .select()
@@ -85,7 +87,7 @@ export async function rerouteDispatch(
     await tx.insert(ticketEvents).values({
       ticketId,
       type: "dispatch_superseded",
-      actor: "human",
+      ...actorColumns(actor),
       data: { dispatchId: latest.id, supersededBy: created.id },
     });
   }

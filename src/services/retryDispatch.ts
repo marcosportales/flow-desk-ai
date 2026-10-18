@@ -1,3 +1,4 @@
+import { type Actor, actorColumns } from "@/domain/actor";
 import { eq } from "drizzle-orm";
 import { transitionDispatchStatus } from "@/domain/transitions";
 import { dispatches, jobs, ticketEvents } from "@/infra/db/schema";
@@ -14,6 +15,7 @@ export type RetryResult =
 export async function retryDispatch(
   db: Db,
   dispatchId: string,
+  actor: Actor,
 ): Promise<RetryResult> {
   return db.transaction(async (tx) => {
     const [dispatch] = await tx
@@ -40,7 +42,7 @@ export async function retryDispatch(
     await tx.insert(ticketEvents).values({
       ticketId: dispatch.ticketId,
       type: "dispatch_retried",
-      actor: "human",
+      ...actorColumns(actor),
       data: { dispatchId: dispatch.id },
     });
     return { kind: "queued" };

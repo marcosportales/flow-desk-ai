@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { getDb } from "@/infra/db/client";
 import type { Db } from "@/services/createTicket";
+import { type Actor, userActor } from "@/domain/actor";
 import { getRequestUser } from "@/infra/auth/session";
 import {
   authorizeManualAction,
@@ -13,22 +14,24 @@ import { errorResponse } from "./errors";
 // response.
 
 // Manual Actions need an Operator session (ADR 0008): no session is 401, and
-// an Integration's API key never substitutes for one (403). Resolves to null
-// when the caller may proceed.
+// an Integration's API key never substitutes for one (403). Resolves to the
+// Operator as the event actor when the caller may proceed.
 export async function rejectUnlessOperator(
   request: Request,
   db: Db,
   target: { ticketId: string } | { dispatchId: string },
-): Promise<Response | null> {
+): Promise<{ response: Response } | { actor: Actor }> {
   const user = await getRequestUser(request);
   if (!user) {
-    return request.headers.get("x-api-key")
-      ? errorResponse(
-          403,
-          "forbidden",
-          "Manual Actions require an Operator session; the API key cannot run them",
-        )
-      : errorResponse(401, "unauthorized", "Sign in as an Operator");
+    return {
+      response: request.headers.get("x-api-key")
+        ? errorResponse(
+            403,
+            "forbidden",
+            "Manual Actions require an Operator session; the API key cannot run them",
+          )
+        : errorResponse(401, "unauthorized", "Sign in as an Operator"),
+    };
   }
   const verdict: ManualActionAuthorization = await authorizeManualAction(
     db,
@@ -36,13 +39,15 @@ export async function rejectUnlessOperator(
     target,
   );
   if (verdict === "forbidden") {
-    return errorResponse(
-      403,
-      "forbidden",
-      "Only an Operator of the Ticket's Team can run Manual Actions",
-    );
+    return {
+      response: errorResponse(
+        403,
+        "forbidden",
+        "Only an Operator of the Ticket's Team can run Manual Actions",
+      ),
+    };
   }
-  return null;
+  return { actor: userActor(user.id) };
 }
 
 type ActionResult = { kind: string; message?: string; details?: unknown };
@@ -57,7 +62,12 @@ const conflictCodes = new Set([
 export async function manualTicketAction(
   request: Request,
   params: Promise<{ id: string }>,
-  run: (db: Db, ticketId: string, body: unknown) => Promise<ActionResult>,
+  run: (
+    db: Db,
+    ticketId: string,
+    body: unknown,
+    actor: Actor,
+  ) => Promise<ActionResult>,
   { withBody = true, successStatus = 200 } = {},
 ): Promise<Response> {
   const { id } = await params;
@@ -65,8 +75,8 @@ export async function manualTicketAction(
     return errorResponse(404, "not_found", "Unknown ticket");
   }
   const db = getDb();
-  const rejected = await rejectUnlessOperator(request, db, { ticketId: id });
-  if (rejected) return rejected;
+  const operator = await rejectUnlessOperator(request, db, { ticketId: id });
+  if ("response" in operator) return operator.response;
   let body: unknown;
   if (withBody) {
     try {
@@ -76,7 +86,7 @@ export async function manualTicketAction(
     }
   }
 
-  const result = await run(db, id, body);
+  const result = await run(db, id, body, operator.actor);
   if (result.kind === "ok" || result.kind === "queued") {
     return Response.json({ ticketId: id }, { status: successStatus });
   }

@@ -78,7 +78,8 @@ describe("POST /api/dispatches/:id/retry", () => {
     expect(after.jobs.map((j) => j.status).sort()).toEqual(["done", "queued"]);
     expect(after.events.at(-1)).toMatchObject({
       type: "dispatch_retried",
-      actor: "human",
+      actor: "user",
+      actorUserId: session.user!.id,
       data: { dispatchId: before.dispatch.id },
     });
   });

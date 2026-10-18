@@ -27,7 +27,9 @@ export type TicketDetail = {
   >;
   classificationAttempts: (typeof classificationAttempts.$inferSelect)[];
   dispatches: DispatchWithAttempts[];
-  events: (typeof ticketEvents.$inferSelect)[];
+  // `actorLabel` is who the timeline shows: a User's name, "Integration" or
+  // "System".
+  events: (typeof ticketEvents.$inferSelect & { actorLabel: string })[];
   // The rule table as recorded when the Priority was computed.
   priorityEvaluation: PriorityEvaluation | null;
   // The AI's Reason, from the latest `classified` event.
@@ -63,7 +65,7 @@ export async function getTicketDetail(
   // Another User's Ticket is indistinguishable from a missing one.
   if (!row) return { kind: "not_found" };
 
-  const [attempts, dispatchRows, events] = await Promise.all([
+  const [attempts, dispatchRows, eventRows] = await Promise.all([
     db
       .select()
       .from(classificationAttempts)
@@ -75,11 +77,17 @@ export async function getTicketDetail(
       .where(eq(dispatches.ticketId, id))
       .orderBy(asc(dispatches.sequence)),
     db
-      .select()
+      .select({ event: ticketEvents, actorName: users.name })
       .from(ticketEvents)
+      .leftJoin(users, eq(users.id, ticketEvents.actorUserId))
       .where(eq(ticketEvents.ticketId, id))
       .orderBy(asc(ticketEvents.id)),
   ]);
+
+  const events = eventRows.map(({ event, actorName }) => ({
+    ...event,
+    actorLabel: actorLabel(event.actor, actorName),
+  }));
 
   const dispatchIds = dispatchRows.map((d) => d.id);
   const attemptRows = dispatchIds.length
@@ -122,4 +130,22 @@ export async function getTicketDetail(
       settled,
     },
   };
+}
+
+// `ai` and `n8n` are legacy values for what is now the system. `human` events
+// predate the actor naming a User, so no name is known.
+function actorLabel(
+  actor: typeof ticketEvents.$inferSelect.actor,
+  userName: string | null,
+): string {
+  switch (actor) {
+    case "user":
+      return userName ?? "Unknown user";
+    case "integration":
+      return "Integration";
+    case "human":
+      return "A person";
+    default:
+      return "System";
+  }
 }

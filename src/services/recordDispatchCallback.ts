@@ -38,7 +38,7 @@ export async function recordDispatchCallback(
       await tx.insert(ticketEvents).values({
         ticketId: dispatch.ticketId,
         type: "dispatch_callback_ignored",
-        actor: "n8n",
+        actor: "system",
         data: {
           dispatchId: dispatch.id,
           outcome: callback.outcome,
@@ -82,7 +82,7 @@ export async function recordDispatchCallback(
         callback.outcome === "succeeded"
           ? "dispatch_succeeded"
           : "dispatch_failed",
-      actor: "n8n",
+      actor: "system",
       data: {
         dispatchId: dispatch.id,
         n8nExecutionId: callback.n8n_execution_id,

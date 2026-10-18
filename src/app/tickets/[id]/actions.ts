@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { type Actor, userActor } from "@/domain/actor";
 import { requireUser } from "@/infra/auth/session";
 import { getDb } from "@/infra/db/client";
 import { authorizeManualAction } from "@/services/authorizeManualAction";
@@ -31,15 +32,16 @@ const forbidden: ManualActionState = {
   message: "Only an Operator of the Ticket's Team can run Manual Actions",
 };
 
-// Checks the signed-in User may run Manual Actions on the Ticket (ADR 0008).
-async function deny(
+// Checks the signed-in User may run Manual Actions on the Ticket (ADR 0008),
+// and names them as the actor of the resulting events.
+async function authorize(
   target: { ticketId: string } | { dispatchId: string },
-): Promise<ManualActionState | null> {
+): Promise<{ denied: ManualActionState } | { actor: Actor }> {
   const user = await requireUser();
   const verdict = await authorizeManualAction(getDb(), user.id, target);
-  if (verdict === "forbidden") return forbidden;
-  if (verdict === "not_found") return unknownTicket;
-  return null;
+  if (verdict === "forbidden") return { denied: forbidden };
+  if (verdict === "not_found") return { denied: unknownTicket };
+  return { actor: userActor(user.id) };
 }
 
 const unknownTicket: ManualActionState = {
@@ -98,15 +100,20 @@ export async function classifyAction(
 ): Promise<ManualActionState> {
   const ticketId = text(data, "ticketId");
   if (!z.uuid().safeParse(ticketId).success) return unknownTicket;
-  const denied = await deny({ ticketId });
-  if (denied) return denied;
-  const result = await classifyManually(getDb(), ticketId, {
-    category: text(data, "category"),
-    summary: text(data, "summary"),
-    blocks_work: data.get("blocks_work") === "yes",
-    impact_scope: text(data, "impact_scope"),
-    reason: text(data, "reason"),
-  });
+  const operator = await authorize({ ticketId });
+  if ("denied" in operator) return operator.denied;
+  const result = await classifyManually(
+    getDb(),
+    ticketId,
+    {
+      category: text(data, "category"),
+      summary: text(data, "summary"),
+      blocks_work: data.get("blocks_work") === "yes",
+      impact_scope: text(data, "impact_scope"),
+      reason: text(data, "reason"),
+    },
+    operator.actor,
+  );
   return settle(ticketId, result, "Classification saved");
 }
 
@@ -116,9 +123,9 @@ export async function rerunAction(
 ): Promise<ManualActionState> {
   const ticketId = text(data, "ticketId");
   if (!z.uuid().safeParse(ticketId).success) return unknownTicket;
-  const denied = await deny({ ticketId });
-  if (denied) return denied;
-  const result = await rerunClassification(getDb(), ticketId);
+  const operator = await authorize({ ticketId });
+  if ("denied" in operator) return operator.denied;
+  const result = await rerunClassification(getDb(), ticketId, operator.actor);
   return settle(ticketId, result, "AI re-run queued");
 }
 
@@ -128,12 +135,17 @@ export async function overrideAction(
 ): Promise<ManualActionState> {
   const ticketId = text(data, "ticketId");
   if (!z.uuid().safeParse(ticketId).success) return unknownTicket;
-  const denied = await deny({ ticketId });
-  if (denied) return denied;
-  const result = await overridePriority(getDb(), ticketId, {
-    priority: text(data, "priority"),
-    reason: text(data, "reason"),
-  });
+  const operator = await authorize({ ticketId });
+  if ("denied" in operator) return operator.denied;
+  const result = await overridePriority(
+    getDb(),
+    ticketId,
+    {
+      priority: text(data, "priority"),
+      reason: text(data, "reason"),
+    },
+    operator.actor,
+  );
   return settle(ticketId, result, "Priority Override saved");
 }
 
@@ -143,11 +155,16 @@ export async function statusAction(
 ): Promise<ManualActionState> {
   const ticketId = text(data, "ticketId");
   if (!z.uuid().safeParse(ticketId).success) return unknownTicket;
-  const denied = await deny({ ticketId });
-  if (denied) return denied;
-  const result = await changeTicketStatus(getDb(), ticketId, {
-    status: text(data, "status"),
-  });
+  const operator = await authorize({ ticketId });
+  if ("denied" in operator) return operator.denied;
+  const result = await changeTicketStatus(
+    getDb(),
+    ticketId,
+    {
+      status: text(data, "status"),
+    },
+    operator.actor,
+  );
   return settle(ticketId, result, "Ticket Status changed");
 }
 
@@ -162,8 +179,8 @@ export async function retryAction(
     return { status: "error", message: "Unknown Dispatch" };
   }
   // The form's ticketId is untrusted: authorize through the Dispatch itself.
-  const denied = await deny({ dispatchId });
-  if (denied) return denied;
-  const result = await retryDispatch(getDb(), dispatchId);
+  const operator = await authorize({ dispatchId });
+  if ("denied" in operator) return operator.denied;
+  const result = await retryDispatch(getDb(), dispatchId, operator.actor);
   return settle(ticketId, result, "Dispatch retry queued");
 }

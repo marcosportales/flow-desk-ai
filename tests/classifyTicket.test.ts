@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { asc, eq } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
+import { integrationActor } from "@/domain/actor";
 import { createTicket } from "@/services/createTicket";
 import { classifyTicket } from "@/services/classifyTicket";
 import { FakeClassifier } from "@/infra/classifier/fake";
@@ -36,12 +37,16 @@ async function newTicket(description: string) {
       department: "QA",
     })
     .returning();
-  const result = await createTicket(db, {
-    requesterId: requester!.id,
-    idempotencyKey: randomUUID(),
-    title: "A request",
-    description,
-  });
+  const result = await createTicket(
+    db,
+    {
+      requesterId: requester!.id,
+      idempotencyKey: randomUUID(),
+      title: "A request",
+      description,
+    },
+    integrationActor,
+  );
   if (result.kind !== "created") throw new Error("ticket not created");
   return result.ticket;
 }

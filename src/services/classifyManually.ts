@@ -1,3 +1,4 @@
+import { type Actor, actorColumns } from "@/domain/actor";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { Classification } from "@/domain/classification";
@@ -21,6 +22,7 @@ export async function classifyManually(
   db: Db,
   ticketId: string,
   input: unknown,
+  actor: Actor,
 ): Promise<ClassifyManuallyResult> {
   const parsed = Classification.safeParse(input);
   if (!parsed.success) {
@@ -78,7 +80,7 @@ export async function classifyManually(
       {
         ticketId: ticket.id,
         type: "classified",
-        actor: "human",
+        ...actorColumns(actor),
         data: { ...facts, team },
       },
       {
@@ -90,11 +92,12 @@ export async function classifyManually(
     ]);
 
     if (dispatchable) {
-      await rerouteDispatch(tx, ticket.id, {
-        category: facts.category,
-        priority: evaluation.priority,
-        team,
-      });
+      await rerouteDispatch(
+        tx,
+        ticket.id,
+        { category: facts.category, priority: evaluation.priority, team },
+        actor,
+      );
     }
     return { kind: "ok" };
   });
