@@ -1,4 +1,3 @@
-import { asc, like } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import {
   Card,
@@ -11,30 +10,17 @@ import { Separator } from "@/components/ui/separator";
 import { demoEmailDomain, demoSignInEnabled } from "@/infra/auth/demo";
 import { getCurrentUser } from "@/infra/auth/session";
 import { getDb } from "@/infra/db/client";
-import { teamMemberships, users } from "@/infra/db/schema";
+import { listDemoUsers } from "@/services/listDemoUsers";
 import { DemoShortcuts } from "./DemoShortcuts";
 import { SignInForm } from "./SignInForm";
 
 export const dynamic = "force-dynamic";
 
-async function demoUsers() {
-  const db = getDb();
-  const rows = await db
-    .select({ id: users.id, email: users.email, name: users.name })
-    .from(users)
-    .where(like(users.email, `%${demoEmailDomain}`))
-    .orderBy(asc(users.name));
-  const memberships = await db.select().from(teamMemberships);
-  return rows.map(({ id, email, name }) => ({
-    email,
-    name,
-    teams: memberships.filter((m) => m.userId === id).map((m) => m.team),
-  }));
-}
-
 export default async function SignInPage() {
   if (await getCurrentUser()) redirect("/tickets");
-  const shortcuts = demoSignInEnabled() ? await demoUsers() : [];
+  const shortcuts = demoSignInEnabled()
+    ? await listDemoUsers(getDb(), demoEmailDomain)
+    : [];
 
   return (
     <main className="mx-auto flex max-w-md flex-col gap-6 p-6">

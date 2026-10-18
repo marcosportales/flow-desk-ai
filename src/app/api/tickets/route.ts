@@ -2,13 +2,10 @@ import { integrationActor } from "@/domain/actor";
 import { rejectUnlessAuthorized } from "@/infra/api/auth";
 import { errorResponse } from "@/infra/api/errors";
 import { getDb } from "@/infra/db/client";
-import type { tickets } from "@/infra/db/schema";
-import { createTicket } from "@/services/createTicket";
+import { createTicket, type Ticket } from "@/services/createTicket";
 import { listTickets } from "@/services/listTickets";
 
 export const dynamic = "force-dynamic";
-
-type Ticket = typeof tickets.$inferSelect;
 
 // Idempotency internals stay server-side.
 function publicTicket(ticket: Ticket) {
