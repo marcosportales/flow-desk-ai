@@ -6,3 +6,5 @@ node_modules
 coverage
 services/notifier/data
 services/erp/data
+.claude/worktrees
+.playwright-mcp/
