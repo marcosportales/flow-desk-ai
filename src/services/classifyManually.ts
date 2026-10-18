@@ -11,6 +11,7 @@ import {
 import { ticketEvents, tickets } from "@/infra/db/schema";
 import type { Db } from "./createTicket";
 import { type ManualFailure, rerouteDispatch } from "./dispatchRouting";
+import { notifyQueueEntry } from "./notifications";
 
 // Manual classification: a human enters the facts, the rules recompute the
 // Priority (ADR 0001), and a changed Team or Route gets a new Dispatch.
@@ -76,20 +77,24 @@ export async function classifyManually(
         team,
       })
       .where(eq(tickets.id, ticket.id));
-    await tx.insert(ticketEvents).values([
-      {
-        ticketId: ticket.id,
-        type: "classified",
-        ...actorColumns(actor),
-        data: { ...facts, team },
-      },
-      {
-        ticketId: ticket.id,
-        type: "priority_computed",
-        actor: "system",
-        data: evaluation,
-      },
-    ]);
+    const [classified] = await tx
+      .insert(ticketEvents)
+      .values([
+        {
+          ticketId: ticket.id,
+          type: "classified",
+          ...actorColumns(actor),
+          data: { ...facts, team },
+        },
+        {
+          ticketId: ticket.id,
+          type: "priority_computed",
+          actor: "system",
+          data: evaluation,
+        },
+      ])
+      .returning({ id: ticketEvents.id, ticketId: ticketEvents.ticketId });
+    await notifyQueueEntry(tx, classified!, ticket, team, actor);
 
     if (dispatchable) {
       await rerouteDispatch(

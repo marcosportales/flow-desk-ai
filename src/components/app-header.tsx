@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { PlusIcon } from "lucide-react";
 import { signOut } from "@/app/sign-in/actions";
+import { NotificationBell } from "@/components/notification-bell";
 import { Button } from "@/components/ui/button";
 import { getCurrentUser } from "@/infra/auth/session";
 
@@ -26,6 +27,7 @@ export async function AppHeader() {
         </nav>
         {user && (
           <div className="flex items-center gap-3">
+            <NotificationBell userId={user.id} />
             <span className="text-sm text-muted-foreground">{user.name}</span>
             <form action={signOut}>
               <Button type="submit" variant="outline">
