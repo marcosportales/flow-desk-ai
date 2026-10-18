@@ -125,6 +125,7 @@ export default async function TicketsPage({
   );
   const db = getDb();
   const teams = await getUserTeams(db, user.id);
+  const viewer = { id: user.id, teams };
   // A Team member lands on their queue; everyone else sees what they raised.
   const scope =
     query.scope === "mine" || query.scope === "team"
@@ -133,8 +134,8 @@ export default async function TicketsPage({
         ? "team"
         : "mine";
   const [result, counters] = await Promise.all([
-    listTickets(db, { ...query, scope }, { id: user.id, teams }),
-    getTicketCounters(db),
+    listTickets(db, { ...query, scope }, viewer),
+    getTicketCounters(db, viewer),
   ]);
 
   const pageHref = (page: number) => {

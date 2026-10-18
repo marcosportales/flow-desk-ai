@@ -189,6 +189,52 @@ describe("listTickets", () => {
   });
 });
 
+describe("listTickets scoped to a Requester", () => {
+  it("lists only the Tickets that User raised", async () => {
+    const [other] = await db
+      .insert(users)
+      .values({
+        name: "Other Person",
+        email: `${randomUUID()}@test.example`,
+        department: "QA",
+      })
+      .returning();
+    const theirs = await insertTicket("theirs", { requesterId: other!.id });
+
+    const mine = await listTickets(db, byMarker, {
+      id: requesterId,
+      teams: [],
+    });
+    const others = await listTickets(db, byMarker, {
+      id: other!.id,
+      teams: [],
+    });
+    if (mine.kind !== "ok" || others.kind !== "ok") throw new Error("ok");
+
+    expect(mine.tickets.map((t) => t.id)).not.toContain(theirs.id);
+    expect(mine.total).toBe(5);
+    expect(others.tickets.map((t) => t.id)).toEqual([theirs.id]);
+    expect(others.total).toBe(1);
+  });
+
+  it("scopes the counters too", async () => {
+    const [lonely] = await db
+      .insert(users)
+      .values({
+        name: "Lonely Person",
+        email: `${randomUUID()}@test.example`,
+        department: "QA",
+      })
+      .returning();
+    expect(await getTicketCounters(db, { id: lonely!.id, teams: [] })).toEqual({
+      open: 0,
+      needsReview: 0,
+      failedDispatches: 0,
+      urgent: 0,
+    });
+  });
+});
+
 describe("listTicketsQuery", () => {
   it("accepts URLSearchParams-like input and ignores empty values", () => {
     const parsed = listTicketsQuery.safeParse({

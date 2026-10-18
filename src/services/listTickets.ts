@@ -76,23 +76,35 @@ export type ListTicketsResult =
     }
   | { kind: "invalid"; details: unknown };
 
-// Who is looking. Without a viewer (API key access) no scope applies.
-export type ListViewer = { id: string; teams: readonly Team[] };
+// Who is looking: a signed-in User. Omitted for Integrations, which see every
+// Ticket and have no scope.
+export type Viewer = { id: string; teams: readonly Team[] };
 
-// "My requests" is what the viewer raised; "Team queue" is the Tickets of
-// their Teams, where a Ticket with no Team belongs to service_desk.
-function scopeCondition(
-  scope: (typeof listScopes)[number] | undefined,
-  viewer: ListViewer | undefined,
-): SQL | undefined {
-  if (!scope || !viewer) return undefined;
-  if (scope === "mine") return eq(tickets.requesterId, viewer.id);
+const raisedBy = (viewer: Viewer) => eq(tickets.requesterId, viewer.id);
+
+// The Tickets of the viewer's Teams; a Ticket with no Team belongs to
+// service_desk.
+function inTeamQueue(viewer: Viewer): SQL {
   const teams = [...viewer.teams];
   if (teams.length === 0) return sql`false`;
   return or(
     inArray(tickets.team, teams),
     teams.includes("service_desk") ? sql`${tickets.team} is null` : undefined,
-  );
+  )!;
+}
+
+// A User sees the Tickets they raised and those of their Teams; another
+// User's Ticket is indistinguishable from a missing one.
+export const visibleTo = (viewer?: Viewer) =>
+  viewer && or(raisedBy(viewer), inTeamQueue(viewer));
+
+// "My requests" and "Team queue" narrow what the viewer may already see.
+function scopeCondition(
+  scope: (typeof listScopes)[number] | undefined,
+  viewer: Viewer | undefined,
+): SQL | undefined {
+  if (!scope || !viewer) return undefined;
+  return scope === "mine" ? raisedBy(viewer) : inTeamQueue(viewer);
 }
 
 // Escapes LIKE wildcards so the search text is matched literally.
@@ -103,7 +115,7 @@ function escapeLike(text: string) {
 export async function listTickets(
   db: Db,
   rawQuery: unknown,
-  viewer?: ListViewer,
+  viewer?: Viewer,
 ): Promise<ListTicketsResult> {
   const parsed = listTicketsQuery.safeParse(rawQuery);
   if (!parsed.success) {
@@ -114,6 +126,7 @@ export async function listTickets(
   const pageSize = query.page_size ?? DEFAULT_PAGE_SIZE;
 
   const conditions: (SQL | undefined)[] = [
+    visibleTo(viewer),
     scopeCondition(query.scope, viewer),
     query.status && eq(tickets.status, query.status),
     query.classification_state &&
@@ -166,12 +179,15 @@ export type TicketCounters = {
 };
 
 // Counters describe work still needing attention, so they cover open Tickets only.
-export async function getTicketCounters(db: Db): Promise<TicketCounters> {
+export async function getTicketCounters(
+  db: Db,
+  viewer?: Viewer,
+): Promise<TicketCounters> {
   const countOpen = async (extra?: SQL) => {
     const [r] = await db
       .select({ n: count() })
       .from(tickets)
-      .where(and(eq(tickets.status, "open"), extra));
+      .where(and(eq(tickets.status, "open"), visibleTo(viewer), extra));
     return r?.n ?? 0;
   };
 

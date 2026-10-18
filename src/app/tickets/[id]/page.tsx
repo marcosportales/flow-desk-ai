@@ -92,7 +92,9 @@ export default async function TicketDetailPage({
   const user = await requireUser();
   const { id } = await params;
   if (!z.uuid().safeParse(id).success) notFound();
-  const result = await getTicketDetail(getDb(), id);
+  const db = getDb();
+  const viewer = { id: user.id, teams: await getUserTeams(db, user.id) };
+  const result = await getTicketDetail(db, id, viewer);
   if (result.kind === "not_found") notFound();
   const {
     ticket,
@@ -105,14 +107,11 @@ export default async function TicketDetailPage({
     settled,
   } = result.detail;
   // Requester-only Users get a read-only page (ADR 0008).
-  const canAct = canRunManualActions(
-    { id: user.id, teams: await getUserTeams(getDb(), user.id) },
-    {
-      requesterId: ticket.requesterId,
-      category: ticket.category,
-      team: ticket.team,
-    },
-  );
+  const canAct = canRunManualActions(viewer, {
+    requesterId: ticket.requesterId,
+    category: ticket.category,
+    team: ticket.team,
+  });
   const overridden = ticket.priorityOverrideReason !== null;
   const latestDispatch = dispatches.at(-1);
   const failedDispatchId =

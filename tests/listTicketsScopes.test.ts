@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
+import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Team } from "@/domain/routing";
 import { tickets, users } from "@/infra/db/schema";
+import { getTicketDetail } from "@/services/getTicketDetail";
 import { listTickets } from "@/services/listTickets";
 import { connectTestDb } from "./support/db";
 
@@ -108,5 +110,30 @@ describe("listTickets scopes", () => {
   it("ignores the scope when there is no viewer (API key access)", async () => {
     const result = await listTickets(db, { q: marker, scope: "mine" });
     expect(result.kind === "ok" && result.total).toBe(4);
+  });
+
+  it("without a scope a User sees what they raised plus their Teams' Tickets only", async () => {
+    const result = await listTickets(
+      db,
+      { q: marker },
+      { id: me, teams: ["data_team"] },
+    );
+    if (result.kind !== "ok") throw new Error("expected a valid query");
+    expect(
+      result.tickets.map((t) => t.title.replace(`${marker} `, "")).sort(),
+    ).toEqual(["mine-erp", "theirs-data"]);
+  });
+
+  it("opens a Team's Ticket for a member and hides it from others", async () => {
+    const [theirs] = await db
+      .select({ id: tickets.id })
+      .from(tickets)
+      .where(eq(tickets.title, `${marker} theirs-data`));
+    const member = { id: me, teams: ["data_team"] } as const;
+    const outsider = { id: me, teams: ["it_systems"] } as const;
+    expect((await getTicketDetail(db, theirs!.id, member)).kind).toBe("ok");
+    expect(await getTicketDetail(db, theirs!.id, outsider)).toEqual({
+      kind: "not_found",
+    });
   });
 });
