@@ -1,4 +1,4 @@
-import { asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import {
   classificationAttempts,
   dispatchAttempts,
@@ -9,6 +9,7 @@ import {
 } from "@/infra/db/schema";
 import type { PriorityEvaluation } from "@/domain/priority";
 import type { Db } from "./createTicket";
+import type { RequesterScope } from "./listTickets";
 
 type Ticket = typeof tickets.$inferSelect;
 type Dispatch = typeof dispatches.$inferSelect;
@@ -44,6 +45,7 @@ const inFlightDispatch = ["pending", "sent", "unknown"];
 export async function getTicketDetail(
   db: Db,
   id: string,
+  scope?: RequesterScope,
 ): Promise<TicketDetailResult> {
   const [row] = await db
     .select({
@@ -57,7 +59,13 @@ export async function getTicketDetail(
     })
     .from(tickets)
     .innerJoin(users, eq(users.id, tickets.requesterId))
-    .where(eq(tickets.id, id));
+    .where(
+      and(
+        eq(tickets.id, id),
+        scope && eq(tickets.requesterId, scope.requesterId),
+      ),
+    );
+  // Another User's Ticket is indistinguishable from a missing one.
   if (!row) return { kind: "not_found" };
 
   const [attempts, dispatchRows, events] = await Promise.all([

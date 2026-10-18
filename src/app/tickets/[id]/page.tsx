@@ -87,10 +87,10 @@ export default async function TicketDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await requireUser();
+  const user = await requireUser();
   const { id } = await params;
   if (!z.uuid().safeParse(id).success) notFound();
-  const result = await getTicketDetail(getDb(), id);
+  const result = await getTicketDetail(getDb(), id, { requesterId: user.id });
   if (result.kind === "not_found") notFound();
   const {
     ticket,

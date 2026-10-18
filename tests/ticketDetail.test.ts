@@ -50,6 +50,15 @@ describe("getTicketDetail", () => {
     });
   });
 
+  it("is not_found for another User's Ticket, found for the Requester", async () => {
+    const t = await insertTicket();
+    expect(
+      await getTicketDetail(db, t.id, { requesterId: randomUUID() }),
+    ).toEqual({ kind: "not_found" });
+    const own = await getTicketDetail(db, t.id, { requesterId });
+    expect(own.kind).toBe("ok");
+  });
+
   it("returns a bare pending Ticket without internals", async () => {
     const t = await insertTicket();
     const result = await getTicketDetail(db, t.id);
