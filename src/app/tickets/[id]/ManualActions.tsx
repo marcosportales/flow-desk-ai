@@ -199,6 +199,7 @@ export function ManualActions({
           <Field>
             <FieldLabel htmlFor="override-priority">Priority</FieldLabel>
             <NativeSelect
+              key={priority}
               id="override-priority"
               name="priority"
               defaultValue={priority ?? undefined}
@@ -231,6 +232,8 @@ export function ManualActions({
         <Field>
           <FieldLabel htmlFor="status-select">Status</FieldLabel>
           <NativeSelect
+            // Uncontrolled: remount so it follows the status after a change.
+            key={ticketStatus}
             id="status-select"
             name="status"
             defaultValue={ticketStatus}
