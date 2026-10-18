@@ -1,6 +1,6 @@
 # Demo script (about 4 minutes)
 
-Setup, once: `cp .env.example .env && docker compose up -d`, then confirm `pnpm demo:e2e` passes (it runs the same four scenarios below, headless). Keep four tabs open: the dashboard (<http://localhost:3000/tickets>), the notifier page (<http://localhost:4000>), the simulated ERP page (<http://localhost:4100>) and n8n executions (<http://localhost:5678>; create the owner account on first visit). On a stack started before the ERP existed, load the updated workflow first (README, "Dispatch").
+Setup, once: `cp .env.example .env && docker compose up -d`, then confirm `pnpm demo:e2e` passes (it runs the scenarios below, headless). Keep four tabs open: the dashboard (<http://localhost:3000/tickets>), the notifier page (<http://localhost:4000>), the simulated ERP page (<http://localhost:4100>) and n8n executions (<http://localhost:5678>; create the owner account on first visit). On a stack started before the ERP existed, load the updated workflow first (README, "Dispatch").
 
 Notifier and ERP modes are switched with:
 
@@ -33,6 +33,12 @@ Optional, if time allows: mode `accept_then_drop_callback` is the lost-response 
 
 Set `FAKE_CLASSIFIER_MODE=invalid` in `.env` and run `docker compose up -d worker`. Submit any Request as Ana Morales. After the repair attempt the Ticket lands in **needs review** with the raw output visible and no Dispatch created. A Ticket with no Category belongs to `service_desk` (ADR 0008), so sign in as **Jonas Weber** (`service_desk`), open it from the Team queue and enter a classification by hand: rules recompute, the Ticket is dispatched. Afterwards set the mode back to `valid` in `.env` and run `docker compose up -d worker` again; the worker keeps the old setting until it is recreated.
 
-## 6. Close (15 s)
+## 6. Scenario E, a Requester and an Operator (60 s)
+
+Sign in as **Ana Morales** and submit "The monthly sales report shows incorrect data for the last quarter." Sign out and sign in as **Kofi Mensah** (`data_team`, so an Operator of this Ticket). The bell in the header shows an unread Notification, "New in your Team's queue"; open it and it marks itself read and lands on the Ticket. In Manual actions press **Take** (the Ticket is now assigned to Kofi, accountability per [ADR 0008](adr/0008-permission-from-team-assignment-is-accountability.md)), then set the Status to **resolved**.
+
+Sign back in as Ana. The bell now shows "Your Ticket was resolved" (and "Your Ticket was assigned" before it). Her page has no Manual actions, only the Requester's answer: **close** ("fixed") or **reopen** ("still broken"), each with a short reason. Close it with "Report is correct now"; the timeline records the closing under Ana's name with that reason. Nobody is notified of their own action: Kofi gets nothing when he takes the Ticket, and Ana gets nothing when she closes it ([ADR 0007](adr/0007-better-auth-and-per-ticket-capacities.md): Requester and Operator are capacities on a Ticket, not roles).
+
+## 7. Close (15 s)
 
 Show the ADR list in the README: "here is why it is built this way", and the limitations section: "here is what I would do next".

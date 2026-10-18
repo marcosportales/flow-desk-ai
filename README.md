@@ -21,7 +21,7 @@ pnpm demo:e2e             # Scenarios A–E against the live stack
 - n8n: http://localhost:5678 (executions of the dispatch workflow; create the owner account on first visit)
 - Notifier: http://localhost:4000 (received-messages page)
 
-Open the app and use **Sign in as…** on `/sign-in`: **Ana Morales** is a Requester only (she sees what she raised and can close or reopen her own Tickets); **Grace Lindqvist** (`it_systems`), **Ines Duarte** (`data_team`) and **Jonas Weber** (`service_desk`) belong to a Team and are Operators of its Tickets. Same password for all seeded Users; `DEMO_SIGN_IN=off` removes the shortcuts.
+Open the app and use **Sign in as…** on `/sign-in`: **Ana Morales** is a Requester only (she sees what she raised and can close or reopen her own Tickets); **Grace Lindqvist** (`it_systems`), **Ines Duarte** (`data_team`), **Kofi Mensah** (`it_systems` and `data_team`) and **Jonas Weber** (`service_desk`) belong to a Team and are Operators of its Tickets. Same password for all seeded Users; `DEMO_SIGN_IN=off` removes the shortcuts.
 
 Host ports can be overridden in `.env` (`APP_HOST_PORT`, `N8N_HOST_PORT`, `NOTIFIER_HOST_PORT`, `POSTGRES_HOST_PORT`); `pnpm demo:e2e` reads them. `pnpm demo:e2e` also honours `E2E_APP_URL` and `E2E_NOTIFIER_URL`.
 
@@ -112,8 +112,8 @@ Change the `change-me` values before exposing the stack anywhere.
 - **A**: SAP Request → classified, urgent by `erp_blocker` → Dispatch succeeded, `[URGENT]` message delivered; a repeated Idempotency-Key yields the same Ticket.
 - **B**: company-wide blocker → urgent by `org_wide_blocker`, evaluation recorded.
 - **C**: notifier set to `fail` → Dispatch `failed`, Ticket intact → mode `ok`, manual retry → same Dispatch, new attempt, earlier attempts kept, one Ticket.
-- **E**: the two-User path. Ana (a Requester) raises a Ticket; Kofi (Operator of its Team) takes and resolves it; Ana has an unread Notification and closes the Ticket with a reason; neither of them can do the other's action, and the timeline shows the reason.
 - **D**: worker swapped for a one-off container with `FAKE_CLASSIFIER_MODE=invalid` → repair fails → `needs_review`, raw output kept, no Dispatch → manual classification dispatches. The compose worker is restored afterwards. `E2E_SKIP_D=1` skips this scenario.
+- **E**: the two-User path. Ana (a Requester) raises a Ticket; Kofi (Operator of its Team) takes and resolves it; Ana has an unread Notification and closes the Ticket with a reason; neither of them can do the other's action, and the timeline shows the reason.
 
 It adds Tickets to the running stack and takes about two minutes (Scenario C waits out the automatic retries). To run it without touching your own data, start a separate stack: `COMPOSE_PROJECT_NAME=flowdesk-e2e docker compose up -d` with different host ports in `.env`, then run the script from the same directory with the same `COMPOSE_PROJECT_NAME` exported (Scenario D drives `docker compose` and needs to reach that stack). Both stacks share the `flowdesk-app` image tag, so rebuilding one retags it for the other.
 

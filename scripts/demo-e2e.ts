@@ -418,14 +418,16 @@ async function scenarioD(requesterId: string) {
   }
 }
 
-// The two-User path: a Requester raises a Ticket, an Operator of its Team
-// takes and resolves it, the Requester is notified and closes it (ADR 0007,
-// 0008). Notifications have no API, so the bell in the header is read back.
+// Notifications have no API, so the header bell (notification-bell.tsx) is
+// read back from the rendered page.
 async function bellText(cookie: Record<string, string>) {
   const res = await fetch(`${APP}/tickets`, { headers: cookie });
   return res.text();
 }
 
+// The two-User path: a Requester raises a Ticket, an Operator of its Team
+// takes and resolves it, the Requester is notified and closes it (ADR 0007,
+// 0008).
 async function scenarioE() {
   log("\nScenario E: Requester and Operator, Notification, close");
   const requesters = await api("GET", "/api/requesters");
