@@ -1,7 +1,11 @@
 import { and, count, desc, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { Actor } from "@/domain/actor";
-import { type NotificationKind, queueOf } from "@/domain/notifications";
+import {
+  type NotificationKind,
+  type QueuedTicket,
+  queueOf,
+} from "@/domain/notifications";
 import type { Team } from "@/domain/routing";
 import type { TicketStatus } from "@/domain/transitions";
 import { notifications, teamMemberships, tickets } from "@/infra/db/schema";
@@ -9,17 +13,20 @@ import type { Db } from "./createTicket";
 import type { Tx } from "./dispatchRouting";
 
 // In-app Notifications (GLOSSARY: Notification). They are written in the same
-// transaction as the Ticket Event that causes them, so a request that changes
-// nothing (a retry) notifies nobody, and the unique (user, event) pair keeps
-// any one event from notifying a User twice.
+// transaction as the Ticket Event that causes them, so a retry that changes
+// nothing notifies nobody, and the unique (user, event) pair keeps any one
+// event from notifying a User twice.
 
 export type Recipient = { userId: string; kind: NotificationKind };
+
+// The Ticket Event a Notification is about.
+export type CausingEvent = { id: number; ticketId: string };
 
 // The User who caused the event is never notified of it. When a User is
 // listed twice, the first entry wins.
 export async function notify(
   tx: Tx,
-  event: { id: number; ticketId: string },
+  event: CausingEvent,
   recipients: Recipient[],
   actor: Actor,
 ): Promise<void> {
@@ -40,8 +47,8 @@ export async function notify(
 // it was already there before this event.
 export async function notifyQueueEntry(
   tx: Tx,
-  event: { id: number; ticketId: string },
-  before: Parameters<typeof queueOf>[0],
+  event: CausingEvent,
+  before: QueuedTicket,
   team: Team,
   actor: Actor,
 ): Promise<void> {
@@ -67,7 +74,7 @@ const statusKinds: Partial<Record<TicketStatus, NotificationKind>> = {
 // their own doing and notifies no one.
 export async function notifyStatusChange(
   tx: Tx,
-  event: { id: number; ticketId: string },
+  event: CausingEvent,
   requesterId: string,
   to: TicketStatus,
   actor: Actor,
@@ -114,13 +121,11 @@ export async function listNotifications(
     .where(eq(notifications.userId, userId))
     .orderBy(desc(notifications.createdAt), desc(notifications.eventId))
     .limit(NOTIFICATION_LIST_SIZE);
-  const [{ unread }] = (await db
-    .select({ unread: count() })
+  const [unread] = await db
+    .select({ n: count() })
     .from(notifications)
-    .where(
-      and(eq(notifications.userId, userId), isNull(notifications.readAt)),
-    )) as [{ unread: number }];
-  return { notifications: rows, unreadCount: unread };
+    .where(and(eq(notifications.userId, userId), isNull(notifications.readAt)));
+  return { notifications: rows, unreadCount: unread?.n ?? 0 };
 }
 
 export type OpenNotificationResult =

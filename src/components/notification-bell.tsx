@@ -6,7 +6,7 @@ import { getDb } from "@/infra/db/client";
 import { listNotifications } from "@/services/notifications";
 import { cn } from "@/lib/utils";
 
-const message: Record<NotificationKind, string> = {
+const kindLabel: Record<NotificationKind, string> = {
   assigned_to_you: "Assigned to you",
   ticket_assigned: "Your Ticket was assigned",
   entered_team_queue: "New in your Team's queue",
@@ -69,7 +69,7 @@ export async function NotificationBell({ userId }: { userId: string }) {
                         />
                       )}
                       <span className={cn(!n.readAt && "font-medium")}>
-                        {message[n.kind]}
+                        {kindLabel[n.kind]}
                       </span>
                     </span>
                     <span className="truncate text-muted-foreground">

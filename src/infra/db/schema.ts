@@ -394,7 +394,7 @@ export const ticketEvents = pgTable(
 export const notificationKind = pgEnum("notification_kind", notificationKinds);
 
 // In-app Notifications. Each points at the Ticket Event that caused it, and a
-// User gets at most one per event, so a retried request never notifies twice.
+// User gets at most one per event, so a retry never notifies twice.
 export const notifications = pgTable(
   "notifications",
   {

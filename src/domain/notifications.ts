@@ -21,9 +21,11 @@ export type NotificationKind = (typeof notificationKinds)[number];
 // new Ticket enters a queue when classification first settles it (into a
 // Team, or into Manual Review at service_desk), and again whenever its Team
 // changes.
-export function queueOf(
-  ticket: PolicyTicket & { classificationState: ClassificationState },
-): Team | null {
+export type QueuedTicket = PolicyTicket & {
+  classificationState: ClassificationState;
+};
+
+export function queueOf(ticket: QueuedTicket): Team | null {
   if (ticket.classificationState === "pending" && !ticket.team) return null;
   return ticketTeam(ticket);
 }
