@@ -1,37 +1,11 @@
-import { z } from "zod";
-import { errorResponse } from "@/infra/api/errors";
-import { rejectUnlessOperator } from "@/infra/api/manualAction";
-import { getDb } from "@/infra/db/client";
-import { retryDispatch } from "@/services/retryDispatch";
+import { retry } from "@/infra/manualActions/catalog";
+import { manualActionRoute } from "@/infra/manualActions/route";
 
 export const dynamic = "force-dynamic";
 
 // Manual retry of a failed Dispatch: IMPLEMENTATION.md §4.7.
-export async function POST(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
-  const { id } = await params;
-  if (!z.uuid().safeParse(id).success) {
-    return errorResponse(404, "not_found", "Unknown dispatch");
-  }
-  const db = getDb();
-  const operator = await rejectUnlessOperator(request, db, { dispatchId: id });
-  if ("response" in operator) return operator.response;
-  const result = await retryDispatch(db, id, operator.actor);
-  switch (result.kind) {
-    case "queued":
-      return Response.json(
-        { dispatchId: id, status: "pending" },
-        { status: 202 },
-      );
-    case "not_found":
-      return errorResponse(404, "not_found", "Unknown dispatch");
-    case "not_retryable":
-      return errorResponse(
-        409,
-        "not_retryable",
-        `Only a failed Dispatch can be retried; this one is ${result.status}`,
-      );
-  }
-}
+export const POST = manualActionRoute(retry, {
+  withBody: false,
+  successStatus: 202,
+  successBody: (dispatchId) => ({ dispatchId, status: "pending" }),
+});

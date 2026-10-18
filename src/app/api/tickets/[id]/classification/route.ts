@@ -1,12 +1,7 @@
-import { manualTicketAction } from "@/infra/api/manualAction";
-import { classifyManually } from "@/services/classifyManually";
+import { classify } from "@/infra/manualActions/catalog";
+import { manualActionRoute } from "@/infra/manualActions/route";
 
 export const dynamic = "force-dynamic";
 
 // Manual classification: IMPLEMENTATION.md §4.7.
-export async function POST(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
-  return manualTicketAction(request, params, classifyManually);
-}
+export const POST = manualActionRoute(classify);
