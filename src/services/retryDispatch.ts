@@ -1,13 +1,8 @@
-import { type Actor, actorColumns } from "@/domain/actor";
+import type { Actor } from "@/domain/actor";
 import { eq } from "drizzle-orm";
-import { transitionDispatchStatus } from "@/domain/transitions";
-import {
-  dispatches,
-  jobs,
-  type NewTicketEvent,
-  ticketEvents,
-} from "@/infra/db/schema";
+import { dispatches, jobs } from "@/infra/db/schema";
 import type { Db } from "./createTicket";
+import { moveDispatchStatus } from "./ticketWrites";
 
 // Manual retry of a failed Dispatch: docs/plan/IMPLEMENTATION.md §4.7. The
 // Dispatch keeps its id, so n8n and the notifier see the same idempotency key.
@@ -34,22 +29,16 @@ export async function retryDispatch(
       return { kind: "not_retryable", status: dispatch.status };
     }
 
-    transitionDispatchStatus(dispatch.status, "pending");
-    await tx
-      .update(dispatches)
-      .set({ status: "pending", callbackDeadline: null })
-      .where(eq(dispatches.id, dispatch.id));
+    await moveDispatchStatus(tx, dispatch, "pending", {
+      set: { callbackDeadline: null },
+      actor,
+      event: { type: "dispatch_retried", data: { dispatchId: dispatch.id } },
+    });
     await tx.insert(jobs).values({
       kind: "dispatch",
       ticketId: dispatch.ticketId,
       dispatchId: dispatch.id,
     });
-    await tx.insert(ticketEvents).values({
-      ticketId: dispatch.ticketId,
-      type: "dispatch_retried",
-      ...actorColumns(actor),
-      data: { dispatchId: dispatch.id },
-    } satisfies NewTicketEvent);
     return { kind: "queued" };
   });
 }

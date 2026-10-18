@@ -1,15 +1,11 @@
 import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
-import { type Actor, actorColumns } from "@/domain/actor";
+import type { Actor } from "@/domain/actor";
 import { ticketTeam } from "@/domain/permissions";
-import {
-  teamMemberships,
-  type NewTicketEvent,
-  ticketEvents,
-  tickets,
-} from "@/infra/db/schema";
+import { teamMemberships, tickets } from "@/infra/db/schema";
 import type { Db } from "./createTicket";
 import { notify } from "./notifications";
+import { appendTicketEvent } from "./ticketWrites";
 
 // Take, release and reassign (ADR 0008): assignment decides who is
 // accountable, never who may act. The caller has already checked the actor is
@@ -58,18 +54,13 @@ export async function takeTicket(
           }
         : { kind: "not_found" };
     }
-    const [event] = await tx
-      .insert(ticketEvents)
-      .values({
-        ticketId,
-        type: "ticket_taken",
-        ...actorColumns(actor),
-        data: { assigneeId: userId },
-      } satisfies NewTicketEvent)
-      .returning({ id: ticketEvents.id, ticketId: ticketEvents.ticketId });
+    const event = await appendTicketEvent(tx, ticketId, actor, {
+      type: "ticket_taken",
+      data: { assigneeId: userId },
+    });
     await notify(
       tx,
-      event!,
+      event,
       [{ userId: taken.requesterId, kind: "ticket_assigned" }],
       actor,
     );
@@ -99,12 +90,10 @@ export async function releaseTicket(
       .update(tickets)
       .set({ assigneeId: null })
       .where(eq(tickets.id, ticketId));
-    await tx.insert(ticketEvents).values({
-      ticketId,
+    await appendTicketEvent(tx, ticketId, actor, {
       type: "ticket_released",
-      ...actorColumns(actor),
       data: { from: ticket.assigneeId },
-    } satisfies NewTicketEvent);
+    });
     return { kind: "ok" };
   });
 }
@@ -161,18 +150,13 @@ export async function reassignTicket(
       .update(tickets)
       .set({ assigneeId })
       .where(eq(tickets.id, ticketId));
-    const [event] = await tx
-      .insert(ticketEvents)
-      .values({
-        ticketId,
-        type: "ticket_reassigned",
-        ...actorColumns(actor),
-        data: { from: ticket.assigneeId, to: assigneeId },
-      } satisfies NewTicketEvent)
-      .returning({ id: ticketEvents.id, ticketId: ticketEvents.ticketId });
+    const event = await appendTicketEvent(tx, ticketId, actor, {
+      type: "ticket_reassigned",
+      data: { from: ticket.assigneeId, to: assigneeId },
+    });
     await notify(
       tx,
-      event!,
+      event,
       [
         { userId: assigneeId, kind: "assigned_to_you" },
         { userId: ticket.requesterId, kind: "ticket_assigned" },

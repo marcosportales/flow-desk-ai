@@ -1,14 +1,11 @@
-import { type Actor, actorColumns } from "@/domain/actor";
+import type { Actor } from "@/domain/actor";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
-import {
-  IllegalTransitionError,
-  ticketStatuses,
-  transitionTicketStatus,
-} from "@/domain/transitions";
-import { type NewTicketEvent, ticketEvents, tickets } from "@/infra/db/schema";
+import { IllegalTransitionError, ticketStatuses } from "@/domain/transitions";
+import { tickets } from "@/infra/db/schema";
 import type { Db } from "./createTicket";
 import { notifyStatusChange } from "./notifications";
+import { moveTicketStatus } from "./ticketWrites";
 
 // Ticket Status change by a human, including resolving an Inquiry without a
 // Dispatch. Event only: it never touches Dispatches. IMPLEMENTATION.md §4.7.
@@ -40,28 +37,16 @@ export async function changeTicketStatus(
       .for("update");
     if (!ticket) return { kind: "not_found" };
 
+    let event;
     try {
-      transitionTicketStatus(ticket.status, parsed.data.status);
+      event = await moveTicketStatus(tx, ticket, parsed.data.status, actor);
     } catch (error) {
       if (!(error instanceof IllegalTransitionError)) throw error;
       return { kind: "illegal_transition", message: error.message };
     }
-    await tx
-      .update(tickets)
-      .set({ status: parsed.data.status })
-      .where(eq(tickets.id, ticket.id));
-    const [event] = await tx
-      .insert(ticketEvents)
-      .values({
-        ticketId: ticket.id,
-        type: "status_changed",
-        ...actorColumns(actor),
-        data: { from: ticket.status, to: parsed.data.status },
-      } satisfies NewTicketEvent)
-      .returning({ id: ticketEvents.id, ticketId: ticketEvents.ticketId });
     await notifyStatusChange(
       tx,
-      event!,
+      event,
       ticket.requesterId,
       parsed.data.status,
       actor,

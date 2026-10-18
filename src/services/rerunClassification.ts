@@ -1,12 +1,8 @@
-import { type Actor, actorColumns } from "@/domain/actor";
+import type { Actor } from "@/domain/actor";
 import { eq } from "drizzle-orm";
-import {
-  jobs,
-  type NewTicketEvent,
-  ticketEvents,
-  tickets,
-} from "@/infra/db/schema";
+import { jobs, tickets } from "@/infra/db/schema";
 import type { Db } from "./createTicket";
+import { appendTicketEvent } from "./ticketWrites";
 
 // Re-run AI classification: queues a classify job for a Ticket in Manual
 // Review. The handler records the attempt as kind `rerun`. IMPLEMENTATION.md §4.7.
@@ -41,12 +37,10 @@ export async function rerunClassification(
       .returning({ id: jobs.id });
     if (inserted.length === 0) return { kind: "already_queued" };
 
-    await tx.insert(ticketEvents).values({
-      ticketId: ticket.id,
+    await appendTicketEvent(tx, ticket.id, actor, {
       type: "classification_rerun_requested",
-      ...actorColumns(actor),
       data: {},
-    } satisfies NewTicketEvent);
+    });
     return { kind: "queued" };
   });
 }

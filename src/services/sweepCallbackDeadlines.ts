@@ -1,13 +1,8 @@
 import { and, desc, eq, lt } from "drizzle-orm";
-import { transitionDispatchStatus } from "@/domain/transitions";
-import {
-  dispatchAttempts,
-  dispatches,
-  jobs,
-  type NewTicketEvent,
-  ticketEvents,
-} from "@/infra/db/schema";
+import { systemActor } from "@/domain/actor";
+import { dispatchAttempts, dispatches, jobs } from "@/infra/db/schema";
 import type { Db } from "./createTicket";
+import { moveDispatchStatus } from "./ticketWrites";
 
 // Deadline sweep: docs/plan/IMPLEMENTATION.md §2.5. A `sent` Dispatch with no
 // callback by its deadline becomes `unknown` and is reconciled (ADR 0006).
@@ -31,11 +26,10 @@ export async function sweepCallbackDeadlines(db: Db): Promise<number> {
       .for("update", { skipLocked: true });
 
     for (const dispatch of overdue) {
-      transitionDispatchStatus(dispatch.status, "unknown");
-      await tx
-        .update(dispatches)
-        .set({ status: "unknown" })
-        .where(eq(dispatches.id, dispatch.id));
+      await moveDispatchStatus(tx, dispatch, "unknown", {
+        actor: systemActor,
+        event: { type: "dispatch_unknown", data: { dispatchId: dispatch.id } },
+      });
       const [attempt] = await tx
         .select({ id: dispatchAttempts.id })
         .from(dispatchAttempts)
@@ -48,12 +42,6 @@ export async function sweepCallbackDeadlines(db: Db): Promise<number> {
           .set({ outcome: "unknown", finishedAt: new Date() })
           .where(eq(dispatchAttempts.id, attempt.id));
       }
-      await tx.insert(ticketEvents).values({
-        ticketId: dispatch.ticketId,
-        type: "dispatch_unknown",
-        actor: "system",
-        data: { dispatchId: dispatch.id },
-      } satisfies NewTicketEvent);
       await tx.insert(jobs).values({
         kind: "reconcile",
         ticketId: dispatch.ticketId,
