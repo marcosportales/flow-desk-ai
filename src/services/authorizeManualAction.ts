@@ -21,14 +21,21 @@ export async function authorizeManualAction(
   const ticketId =
     "ticketId" in target
       ? target.ticketId
-      : (
-          await db
-            .select({ ticketId: dispatches.ticketId })
-            .from(dispatches)
-            .where(eq(dispatches.id, target.dispatchId))
-        )[0]?.ticketId;
+      : await ticketOfDispatch(db, target.dispatchId);
   if (!ticketId) return "not_found";
   return authorizeOnTicket(db, userId, ticketId, canRunManualActions);
+}
+
+// The Ticket a Dispatch belongs to, or undefined for an unknown Dispatch.
+export async function ticketOfDispatch(
+  db: Db,
+  dispatchId: string,
+): Promise<string | undefined> {
+  const [row] = await db
+    .select({ ticketId: dispatches.ticketId })
+    .from(dispatches)
+    .where(eq(dispatches.id, dispatchId));
+  return row?.ticketId;
 }
 
 // Gate for the Requester's close/reopen: only the Ticket's own Requester.
