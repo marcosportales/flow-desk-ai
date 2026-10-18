@@ -1,11 +1,49 @@
 import { z } from "zod";
 import { getDb } from "@/infra/db/client";
 import type { Db } from "@/services/createTicket";
-import { rejectUnlessAuthorized } from "./auth";
+import { getRequestUser } from "@/infra/auth/session";
+import {
+  authorizeManualAction,
+  type ManualActionAuthorization,
+} from "@/services/authorizeManualAction";
 import { errorResponse } from "./errors";
 
 // Shared plumbing for the manual Ticket actions (IMPLEMENTATION.md §4.7, §7):
-// API key, id and JSON body checks, then the service result as a response.
+// Operator session, id and JSON body checks, then the service result as a
+// response.
+
+// Manual Actions need an Operator session (ADR 0008): no session is 401, and
+// an Integration's API key never substitutes for one (403). Resolves to null
+// when the caller may proceed.
+export async function rejectUnlessOperator(
+  request: Request,
+  db: Db,
+  target: { ticketId: string } | { dispatchId: string },
+): Promise<Response | null> {
+  const user = await getRequestUser(request);
+  if (!user) {
+    return request.headers.get("x-api-key")
+      ? errorResponse(
+          403,
+          "forbidden",
+          "Manual Actions require an Operator session; the API key cannot run them",
+        )
+      : errorResponse(401, "unauthorized", "Sign in as an Operator");
+  }
+  const verdict: ManualActionAuthorization = await authorizeManualAction(
+    db,
+    user.id,
+    target,
+  );
+  if (verdict === "forbidden") {
+    return errorResponse(
+      403,
+      "forbidden",
+      "Only an Operator of the Ticket's Team can run Manual Actions",
+    );
+  }
+  return null;
+}
 
 type ActionResult = { kind: string; message?: string; details?: unknown };
 
@@ -22,13 +60,13 @@ export async function manualTicketAction(
   run: (db: Db, ticketId: string, body: unknown) => Promise<ActionResult>,
   { withBody = true, successStatus = 200 } = {},
 ): Promise<Response> {
-  const unauthorized = rejectUnlessAuthorized(request);
-  if (unauthorized) return unauthorized;
-
   const { id } = await params;
   if (!z.uuid().safeParse(id).success) {
     return errorResponse(404, "not_found", "Unknown ticket");
   }
+  const db = getDb();
+  const rejected = await rejectUnlessOperator(request, db, { ticketId: id });
+  if (rejected) return rejected;
   let body: unknown;
   if (withBody) {
     try {
@@ -38,7 +76,7 @@ export async function manualTicketAction(
     }
   }
 
-  const result = await run(getDb(), id, body);
+  const result = await run(db, id, body);
   if (result.kind === "ok" || result.kind === "queued") {
     return Response.json({ ticketId: id }, { status: successStatus });
   }

@@ -1,13 +1,18 @@
 import { eq } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { POST as postRetry } from "@/app/api/dispatches/[id]/retry/route";
 import { POST as postCallback } from "@/app/api/webhooks/n8n/route";
 import { signBody } from "@/infra/crypto/hmac";
-import { dispatches, tickets } from "@/infra/db/schema";
+import { dispatches, teamMemberships, tickets, users } from "@/infra/db/schema";
 import { connectTestDb } from "./support/db";
 import { dispatchFixtures, FROM_N8N_SECRET } from "./support/dispatchFixtures";
 import { startN8nStub } from "./support/n8nStub";
 import { testDatabaseUrl } from "./support/testDatabaseUrl";
+
+const session = vi.hoisted(() => ({ user: null as { id: string } | null }));
+vi.mock("@/infra/auth/session", () => ({
+  getRequestUser: async () => session.user,
+}));
 
 const { sql, db } = connectTestDb();
 const { classifiedTicket, runDispatch, snapshot } = dispatchFixtures(db, sql);
@@ -29,10 +34,22 @@ describe("Scenario C: failed Dispatch, manual retry", () => {
     const failed = await snapshot(ticket.id);
     expect(failed.dispatch.status).toBe("failed");
 
+    const [operator] = await db
+      .insert(users)
+      .values({
+        name: "Op",
+        email: `${failed.ticket.id}@t.example`,
+        department: "QA",
+      })
+      .returning();
+    await db
+      .insert(teamMemberships)
+      .values({ userId: operator!.id, team: "it_systems" });
+    session.user = operator!;
+
     const retried = await postRetry(
       new Request("http://localhost/api/dispatches/x/retry", {
         method: "POST",
-        headers: { "X-API-Key": "test-api-key" },
       }),
       { params: Promise.resolve({ id: failed.dispatch.id }) },
     );

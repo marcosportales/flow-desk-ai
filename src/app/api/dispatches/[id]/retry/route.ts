@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { rejectUnlessAuthorized } from "@/infra/api/auth";
 import { errorResponse } from "@/infra/api/errors";
+import { rejectUnlessOperator } from "@/infra/api/manualAction";
 import { getDb } from "@/infra/db/client";
 import { retryDispatch } from "@/services/retryDispatch";
 
@@ -11,14 +11,14 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const unauthorized = rejectUnlessAuthorized(request);
-  if (unauthorized) return unauthorized;
-
   const { id } = await params;
   if (!z.uuid().safeParse(id).success) {
     return errorResponse(404, "not_found", "Unknown dispatch");
   }
-  const result = await retryDispatch(getDb(), id);
+  const db = getDb();
+  const rejected = await rejectUnlessOperator(request, db, { dispatchId: id });
+  if (rejected) return rejected;
+  const result = await retryDispatch(db, id);
   switch (result.kind) {
     case "queued":
       return Response.json(

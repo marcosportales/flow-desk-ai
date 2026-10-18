@@ -67,6 +67,27 @@ async function request(
 const api = (method: string, path: string, body?: unknown, extra = {}) =>
   request(APP, method, path, body, { "x-api-key": API_KEY, ...extra });
 
+// Manual Actions need an Operator session (ADR 0008), so sign in through the
+// demo shortcut endpoint and reuse the session cookie. Needs DEMO_SIGN_IN on.
+async function signIn(email: string): Promise<Record<string, string>> {
+  const res = await fetch(`${APP}/api/demo-sign-in`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email }),
+  });
+  assert(res.status === 200, `signed in as ${email}`);
+  const cookie = res.headers
+    .getSetCookie()
+    .map((c) => c.split(";")[0])
+    .join("; ");
+  return { cookie };
+}
+
+// Kofi is in it_systems and data_team; Jonas is in service_desk, which owns a
+// Ticket in Manual Review until it has a Category.
+const DATA_OPERATOR = "kofi.mensah@flowdesk.example";
+const SERVICE_DESK_OPERATOR = "jonas.weber@flowdesk.example";
+
 async function setNotifierMode(mode: string) {
   const res = await request(NOTIFIER, "POST", "/admin/mode", { mode });
   assert(res.status === 200, `notifier mode set to ${mode}`);
@@ -260,8 +281,17 @@ async function scenarioC(requesterId: string) {
   );
 
   await setNotifierMode("ok");
-  const retry = await api("POST", `/api/dispatches/${dispatch.id}/retry`);
-  assert(retry.status === 202, "manual retry accepted (202)");
+  const keyRetry = await api("POST", `/api/dispatches/${dispatch.id}/retry`);
+  assert(keyRetry.status === 403, "API key cannot retry a Dispatch (403)");
+  const operator = await signIn(DATA_OPERATOR);
+  const retry = await request(
+    APP,
+    "POST",
+    `/api/dispatches/${dispatch.id}/retry`,
+    undefined,
+    operator,
+  );
+  assert(retry.status === 202, "Operator's manual retry accepted (202)");
 
   const d = await waitForDispatch(id, "succeeded");
   assert(
@@ -341,14 +371,23 @@ async function scenarioD(requesterId: string) {
       "raw output kept for inspection",
     );
 
-    const manual = await api("POST", `/api/tickets/${id}/classification`, {
+    const facts = {
       category: "data",
       summary: "Sales report shows wrong quarterly data",
       blocks_work: false,
       impact_scope: "individual",
       reason: "Classified by hand after the AI output was invalid.",
-    });
-    assert(manual.status === 200, "manual classification accepted");
+    };
+    const byKey = await api("POST", `/api/tickets/${id}/classification`, facts);
+    assert(byKey.status === 403, "API key cannot classify manually (403)");
+    const manual = await request(
+      APP,
+      "POST",
+      `/api/tickets/${id}/classification`,
+      facts,
+      await signIn(SERVICE_DESK_OPERATOR),
+    );
+    assert(manual.status === 200, "Operator's manual classification accepted");
     const after = await waitForDispatch(id, "succeeded", 60_000);
     assert(
       after.ticket.classificationSource === "human",

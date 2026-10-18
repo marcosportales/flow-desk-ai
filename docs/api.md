@@ -6,7 +6,8 @@ Base URL: `http://localhost:3000` (override with `APP_HOST_PORT`).
 
 ## Conventions
 
-- **Auth**: every endpoint except `/api/health` and `/api/webhooks/n8n` needs `X-API-Key: $FLOWDESK_API_KEY`. A missing or wrong key is `401 unauthorized`. The web UI uses Server Actions and a Better Auth session cookie (sign in at `/sign-in`), not the key; `/api/auth/*` and `/api/demo-sign-in` are the sign-in endpoints.
+- **Auth**: every endpoint except `/api/health` and `/api/webhooks/n8n` needs `X-API-Key: $FLOWDESK_API_KEY`, except the Manual Action routes below. A missing or wrong key is `401 unauthorized`. The API key identifies an Integration: it can create, read and list Tickets but not run Manual Actions.
+- **Manual Actions** (`/api/tickets/:id/classification`, `…/classification/rerun`, `…/priority-override`, `…/status`, `/api/dispatches/:id/retry`) take an Operator session cookie (ADR 0008) and refuse the API key with `403 forbidden`. No session is `401`; a signed-in User who is not an Operator of the Ticket's Team is `403 forbidden`. The web UI uses Server Actions and a Better Auth session cookie (sign in at `/sign-in`), not the key; `/api/auth/*` and `/api/demo-sign-in` are the sign-in endpoints.
 - **Errors** always have the same shape: `{ "error": { "code": "...", "message": "...", "details": ... } }` (`details` only for validation errors, as Zod's flattened error).
 - **Ids** are UUIDs; a malformed id is `404 not_found`.
 - **Bodies** are JSON; invalid JSON is `422 validation_error`.
@@ -15,6 +16,7 @@ Base URL: `http://localhost:3000` (override with `APP_HOST_PORT`).
 | ------ | ------------------------------------------------- | --------------------------------------------------------------- |
 | 401    | `unauthorized`                                    | Missing or invalid API key                                      |
 | 401    | `invalid_signature`, `stale_timestamp`            | Bad HMAC or timestamp skew over 5 minutes (callback only)       |
+| 403    | `forbidden`                                       | Manual Action without an Operator session of the Ticket's Team |
 | 404    | `not_found`                                       | Unknown Ticket or Dispatch                                      |
 | 409    | `idempotency_conflict`                            | Idempotency-Key reused with a different request                 |
 | 409    | `conflict`, `illegal_transition`, `not_retryable` | The Ticket or Dispatch is not in a state that allows the action |
@@ -76,23 +78,23 @@ Manual classification, allowed on `needs_review` or `classified` Tickets. Body i
 }
 ```
 
-`category` is `erp | access | data | inquiry | other`; `impact_scope` is `individual | team | organization`; `summary` ≤ 200 and `reason` ≤ 500 characters; no extra keys. Priority and Team are recomputed by the rules, and a new Dispatch is created if the routing changed. `200 { "ticketId" }`, `404`, `409`, `422`.
+`category` is `erp | access | data | inquiry | other`; `impact_scope` is `individual | team | organization`; `summary` ≤ 200 and `reason` ≤ 500 characters; no extra keys. Priority and Team are recomputed by the rules, and a new Dispatch is created if the routing changed. `200 { "ticketId" }`, `403`, `404`, `409`, `422`.
 
 ### `POST /api/tickets/:id/classification/rerun`
 
-Queue another AI classification of a `needs_review` Ticket. No body. `202 { "ticketId" }`, `409` if not re-runnable or already queued.
+Queue another AI classification of a `needs_review` Ticket. No body. `202 { "ticketId" }`, `403`, `409` if not re-runnable or already queued.
 
 ### `POST /api/tickets/:id/priority-override`
 
-`{ "priority": "urgent|high|normal|low", "reason": "…" }` (reason 1–500 characters, required). Allowed on `classified` Tickets; a changed Route creates a new Dispatch. `200`, `404`, `409`, `422`.
+`{ "priority": "urgent|high|normal|low", "reason": "…" }` (reason 1–500 characters, required). Allowed on `classified` Tickets; a changed Route creates a new Dispatch. `200`, `403`, `404`, `409`, `422`.
 
 ### `POST /api/tickets/:id/status`
 
-`{ "status": "open|resolved|closed" }`. Legal moves: open→resolved, resolved→closed, resolved→open. It records an event only and never touches Dispatches. `200`, `404`, `409 illegal_transition`, `422`.
+`{ "status": "open|resolved|closed" }`. Legal moves: open→resolved, resolved→closed, resolved→open. It records an event only and never touches Dispatches. `200`, `403`, `404`, `409 illegal_transition`, `422`.
 
 ### `POST /api/dispatches/:id/retry`
 
-Manual retry of a `failed` Dispatch: same `dispatch_id`, new attempt. `202 { "dispatchId", "status": "pending" }`, `404`, `409 not_retryable` for any other status.
+Manual retry of a `failed` Dispatch: same `dispatch_id`, new attempt. `202 { "dispatchId", "status": "pending" }`, `403`, `404`, `409 not_retryable` for any other status.
 
 ### `POST /api/webhooks/n8n`
 

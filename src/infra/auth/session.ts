@@ -12,7 +12,18 @@ export type CurrentUser = {
 export const signInPath = "/sign-in";
 
 export async function getCurrentUser(): Promise<CurrentUser | null> {
-  const session = await getAuth().api.getSession({ headers: await headers() });
+  return userFrom(await headers());
+}
+
+// For API routes: the User behind the request's session cookie, if any.
+export async function getRequestUser(
+  request: Request,
+): Promise<CurrentUser | null> {
+  return userFrom(request.headers);
+}
+
+async function userFrom(requestHeaders: Headers): Promise<CurrentUser | null> {
+  const session = await getAuth().api.getSession({ headers: requestHeaders });
   if (!session) return null;
   const { id, name, email, department } = session.user as CurrentUser;
   return { id, name, email, department };
