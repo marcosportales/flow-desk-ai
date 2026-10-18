@@ -27,9 +27,12 @@ import {
   classifyAction,
   type ManualActionState,
   overrideAction,
+  reassignAction,
+  releaseAction,
   rerunAction,
   retryAction,
   statusAction,
+  takeAction,
 } from "./actions";
 import { label } from "@/lib/format";
 
@@ -40,6 +43,9 @@ type Props = {
   priority: string | null;
   // The latest Dispatch, when it failed and has not been superseded.
   failedDispatchId: string | null;
+  assigneeId: string | null;
+  // The Operators of the Ticket's Team.
+  teamMembers: { id: string; name: string }[];
 };
 
 const idle: ManualActionState = { status: "idle" };
@@ -107,12 +113,63 @@ export function ManualActions({
   classificationState,
   priority,
   failedDispatchId,
+  assigneeId,
+  teamMembers,
 }: Props) {
   const canClassify =
     classificationState === "needs_review" ||
     classificationState === "classified";
+  const reassignTo = teamMembers.filter((m) => m.id !== assigneeId);
   return (
     <div className="grid gap-4 md:grid-cols-2">
+      {assigneeId ? (
+        <ActionForm
+          title="Release"
+          action={releaseAction}
+          ticketId={ticketId}
+          submit="Release to the queue"
+        >
+          <p className="text-sm text-muted-foreground">
+            Puts the Ticket back in the Team queue with no Assignee.
+          </p>
+        </ActionForm>
+      ) : (
+        <ActionForm
+          title="Take"
+          action={takeAction}
+          ticketId={ticketId}
+          submit="Take this Ticket"
+        >
+          <p className="text-sm text-muted-foreground">
+            You become the Assignee. Anyone on the Team can still act on it.
+          </p>
+        </ActionForm>
+      )}
+      {reassignTo.length > 0 && (
+        <ActionForm
+          title="Reassign"
+          action={reassignAction}
+          ticketId={ticketId}
+          submit="Reassign"
+        >
+          <Field>
+            <FieldLabel htmlFor="reassign-assignee">Team member</FieldLabel>
+            <NativeSelect
+              key={assigneeId}
+              id="reassign-assignee"
+              name="assigneeId"
+              required
+              className="w-full"
+            >
+              {reassignTo.map((m) => (
+                <NativeSelectOption key={m.id} value={m.id}>
+                  {m.name}
+                </NativeSelectOption>
+              ))}
+            </NativeSelect>
+          </Field>
+        </ActionForm>
+      )}
       {classificationState === "needs_review" && (
         <ActionForm
           title="Re-run AI"

@@ -8,6 +8,7 @@ import { formatTicketNumber } from "@/domain/ticketNumber";
 import { requireUser } from "@/infra/auth/session";
 import { getDb } from "@/infra/db/client";
 import { getUserTeams } from "@/services/getUserTeams";
+import { listTeamMembers } from "@/services/listTeamMembers";
 import { getTicketDetail } from "@/services/getTicketDetail";
 import { StatusBadge } from "@/components/status-badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -99,6 +100,7 @@ export default async function TicketDetailPage({
   const {
     ticket,
     requester,
+    assignee,
     classificationAttempts,
     dispatches,
     events,
@@ -112,6 +114,7 @@ export default async function TicketDetailPage({
     category: ticket.category,
     team: ticket.team,
   });
+  const teamMembers = canAct ? await listTeamMembers(db, ticket.id) : [];
   const overridden = ticket.priorityOverrideReason !== null;
   const latestDispatch = dispatches.at(-1);
   const failedDispatchId =
@@ -148,6 +151,8 @@ export default async function TicketDetailPage({
           <StatusBadge value={ticket.status} />
           <span>Classification State:</span>
           <StatusBadge value={ticket.classificationState} />
+          <span>Assignee:</span>
+          <strong>{assignee ? assignee.name : "Unassigned"}</strong>
         </div>
       </header>
 
@@ -361,6 +366,8 @@ export default async function TicketDetailPage({
             classificationState={ticket.classificationState}
             priority={ticket.priority}
             failedDispatchId={failedDispatchId}
+            assigneeId={assignee?.id ?? null}
+            teamMembers={teamMembers}
           />
         </Section>
       )}

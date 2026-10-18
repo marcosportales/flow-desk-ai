@@ -5,6 +5,11 @@ import { z } from "zod";
 import { type Actor, userActor } from "@/domain/actor";
 import { requireUser } from "@/infra/auth/session";
 import { getDb } from "@/infra/db/client";
+import {
+  reassignTicket,
+  releaseTicket,
+  takeTicket,
+} from "@/services/assignTicket";
 import { authorizeManualAction } from "@/services/authorizeManualAction";
 import { changeTicketStatus } from "@/services/changeTicketStatus";
 import { classifyManually } from "@/services/classifyManually";
@@ -183,4 +188,45 @@ export async function retryAction(
   if ("denied" in operator) return operator.denied;
   const result = await retryDispatch(getDb(), dispatchId, operator.actor);
   return settle(ticketId, result, "Dispatch retry queued");
+}
+
+export async function takeAction(
+  _previous: ManualActionState,
+  data: FormData,
+): Promise<ManualActionState> {
+  const ticketId = text(data, "ticketId");
+  if (!z.uuid().safeParse(ticketId).success) return unknownTicket;
+  const operator = await authorize({ ticketId });
+  if ("denied" in operator) return operator.denied;
+  const result = await takeTicket(getDb(), ticketId, operator.actor);
+  return settle(ticketId, result, "You took the Ticket");
+}
+
+export async function releaseAction(
+  _previous: ManualActionState,
+  data: FormData,
+): Promise<ManualActionState> {
+  const ticketId = text(data, "ticketId");
+  if (!z.uuid().safeParse(ticketId).success) return unknownTicket;
+  const operator = await authorize({ ticketId });
+  if ("denied" in operator) return operator.denied;
+  const result = await releaseTicket(getDb(), ticketId, operator.actor);
+  return settle(ticketId, result, "Ticket released to the queue");
+}
+
+export async function reassignAction(
+  _previous: ManualActionState,
+  data: FormData,
+): Promise<ManualActionState> {
+  const ticketId = text(data, "ticketId");
+  if (!z.uuid().safeParse(ticketId).success) return unknownTicket;
+  const operator = await authorize({ ticketId });
+  if ("denied" in operator) return operator.denied;
+  const result = await reassignTicket(
+    getDb(),
+    ticketId,
+    { assigneeId: text(data, "assigneeId") },
+    operator.actor,
+  );
+  return settle(ticketId, result, "Ticket reassigned");
 }

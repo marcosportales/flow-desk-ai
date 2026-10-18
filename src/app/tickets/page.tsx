@@ -35,6 +35,7 @@ import { requireUser } from "@/infra/auth/session";
 import { getDb } from "@/infra/db/client";
 import { getUserTeams } from "@/services/getUserTeams";
 import {
+  assigneeFilters,
   getTicketCounters,
   listTickets,
   type TicketListItem,
@@ -46,6 +47,13 @@ export const dynamic = "force-dynamic";
 type SearchParams = Record<string, string | string[] | undefined>;
 
 const filters = [
+  {
+    name: "assignee",
+    label: "Assignee",
+    options: assigneeFilters,
+    // "Mine" is the Operator's own assignments, so only Team members get it.
+    teamOnly: true,
+  },
   { name: "status", label: "Ticket Status", options: ticketStatuses },
   {
     name: "classification_state",
@@ -90,6 +98,11 @@ function Row({ ticket }: { ticket: TicketListItem }) {
         </Link>
       </TableCell>
       <TableCell>{ticket.requesterName}</TableCell>
+      <TableCell>
+        {ticket.assigneeName ?? (
+          <span className="text-muted-foreground">Unassigned</span>
+        )}
+      </TableCell>
       <TableCell>
         <StatusBadge value={ticket.category} />
       </TableCell>
@@ -194,23 +207,25 @@ export default async function TicketsPage({
             <FieldLabel htmlFor="q">Search title</FieldLabel>
             <Input id="q" type="search" name="q" defaultValue={query.q ?? ""} />
           </Field>
-          {filters.map((f) => (
-            <Field key={f.name} className="w-auto">
-              <FieldLabel htmlFor={f.name}>{f.label}</FieldLabel>
-              <NativeSelect
-                id={f.name}
-                name={f.name}
-                defaultValue={query[f.name] ?? ""}
-              >
-                <NativeSelectOption value="">All</NativeSelectOption>
-                {f.options.map((o) => (
-                  <NativeSelectOption key={o} value={o}>
-                    {label(o)}
-                  </NativeSelectOption>
-                ))}
-              </NativeSelect>
-            </Field>
-          ))}
+          {filters
+            .filter((f) => !("teamOnly" in f) || teams.length > 0)
+            .map((f) => (
+              <Field key={f.name} className="w-auto">
+                <FieldLabel htmlFor={f.name}>{f.label}</FieldLabel>
+                <NativeSelect
+                  id={f.name}
+                  name={f.name}
+                  defaultValue={query[f.name] ?? ""}
+                >
+                  <NativeSelectOption value="">All</NativeSelectOption>
+                  {f.options.map((o) => (
+                    <NativeSelectOption key={o} value={o}>
+                      {label(o)}
+                    </NativeSelectOption>
+                  ))}
+                </NativeSelect>
+              </Field>
+            ))}
           <div className="flex gap-2">
             <Button type="submit">Apply</Button>
             <Button
@@ -256,6 +271,7 @@ export default async function TicketsPage({
                     "Ticket",
                     "Title",
                     "Requester",
+                    "Assignee",
                     "Category",
                     "Priority",
                     "Status",
