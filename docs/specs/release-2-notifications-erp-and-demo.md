@@ -1,17 +1,19 @@
 # Release 2: notifications, simulated ERP and the two-role demo
 
+**Epic:** [SCRUM-24](https://marcosportales2002.atlassian.net/browse/SCRUM-24)
+
 **Goal:** the app reads as an automation platform, not a form: people are told when something concerns them, an ERP-category Ticket produces a record in an external system, and the demo and README tell that story for both kinds of User.
 
 **Decisions:** [ADR 0009](../adr/0009-flowdesk-is-a-layer-in-front-of-the-erp.md), building on [ADR 0005](../adr/0005-app-decides-n8n-executes.md) and [ADR 0006](../adr/0006-reconcile-before-retry.md). Depends on [Release 1](release-1-users-teams-and-assignment.md) except T9.
 
 **Out of scope:** email, Slack or any external per-person notification; real SAP; a public hosted deployment (ADR 0002 stays local-first); automatic assignment.
 
-| Task | Title | Blocked by |
-| --- | --- | --- |
-| T8 | In-app Notifications | R1-T6 |
-| T9 | Simulated ERP target with an External Reference | — |
-| T10 | Requester closes or reopens their own Ticket | R1-T3 |
-| T11 | README and demo for two Users | T8, T9, T10 |
+| Task | Jira | Title | Blocked by |
+| --- | --- | --- | --- |
+| T8 | SCRUM-34 | In-app Notifications | R1-T6 |
+| T9 | SCRUM-26 | Simulated ERP target with an External Reference | — |
+| T10 | SCRUM-33 | Requester closes or reopens their own Ticket | R1-T3 |
+| T11 | SCRUM-35 | README and demo for two Users | T8, T9, T10 |
 
 ## T8: In-app Notifications
 

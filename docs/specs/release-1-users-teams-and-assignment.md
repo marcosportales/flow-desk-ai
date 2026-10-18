@@ -1,20 +1,22 @@
 # Release 1: sign-in, Teams and assignment
 
+**Epic:** [SCRUM-23](https://marcosportales2002.atlassian.net/browse/SCRUM-23)
+
 **Goal:** the demo shows who may do what. A Requester sees only their own Tickets and no Manual Actions; the Team in charge sees a queue, an Operator takes a Ticket, and every human action is attributed.
 
 **Decisions:** [ADR 0007](../adr/0007-better-auth-and-per-ticket-capacities.md), [ADR 0008](../adr/0008-permission-from-team-assignment-is-accountability.md). Background: [SCRUM-22 research](../research/scrum-22-manual-actions-access.md). Vocabulary: [GLOSSARY.md](../../GLOSSARY.md).
 
 **Out of scope:** automatic assignment, external per-person notifications, separation of duties (a User who is both Requester and Team member of a Ticket may act on it), a public hosted demo, any admin UI. Demo data is fictional and reseeded: the `requesters` table becomes Users and no data migration is written.
 
-| Task | Title | Blocked by |
-| --- | --- | --- |
-| T1 | Sign in with Better Auth | — |
-| T2 | Team membership and the permission policy | T1 |
-| T3 | Requester sees only their own Tickets | T2 |
-| T4 | Operator sees the Team queue; Manual Actions hidden from non-Operators | T2 |
-| T5 | Enforce Manual Action permissions in Server Actions and API routes | T2 |
-| T6 | Take, release and reassign a Ticket | T4 |
-| T7 | Actor on Ticket Events | T2 (integrates with T6) |
+| Task | Jira | Title | Blocked by |
+| --- | --- | --- | --- |
+| T1 | SCRUM-25 | Sign in with Better Auth | — |
+| T2 | SCRUM-27 | Team membership and the permission policy | T1 |
+| T3 | SCRUM-28 | Requester sees only their own Tickets | T2 |
+| T4 | SCRUM-29 | Operator sees the Team queue; Manual Actions hidden from non-Operators | T2 |
+| T5 | SCRUM-30 | Enforce Manual Action permissions in Server Actions and API routes | T2 |
+| T6 | SCRUM-32 | Take, release and reassign a Ticket | T4 |
+| T7 | SCRUM-31 | Actor on Ticket Events | T2 (integrates with T6) |
 
 T3, T4 and T5 can proceed in parallel once T2 lands. Authorization tests live inside each task, never in a separate one.
 
