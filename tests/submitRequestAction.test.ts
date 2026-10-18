@@ -1,8 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { count, eq } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+const requireUser = vi.hoisted(() => vi.fn());
+vi.mock("@/infra/auth/session", () => ({ requireUser }));
+
 import { submitRequest } from "@/app/tickets/new/actions";
-import { requesters, tickets } from "@/infra/db/schema";
+import { users, tickets } from "@/infra/db/schema";
 import { connectTestDb } from "./support/db";
 import { testDatabaseUrl } from "./support/testDatabaseUrl";
 
@@ -15,13 +18,14 @@ afterAll(() => sql.end());
 
 async function newRequester() {
   const [requester] = await db
-    .insert(requesters)
+    .insert(users)
     .values({
       name: "Form Person",
       email: `${randomUUID()}@test.example`,
       department: "QA",
     })
     .returning();
+  requireUser.mockResolvedValue(requester!);
   return requester!;
 }
 
@@ -35,7 +39,6 @@ describe("submitRequest (/tickets/new)", () => {
   it("creates one Ticket when the same form render is submitted twice", async () => {
     const requester = await newRequester();
     const fields = {
-      requesterId: requester.id,
       title: "Printer is on fire",
       description: "The third floor printer is smoking again.",
       idempotencyKey: randomUUID(),
@@ -58,12 +61,34 @@ describe("submitRequest (/tickets/new)", () => {
     expect(tally!.n).toBe(1);
   });
 
-  it("returns field errors for invalid input", async () => {
+  it("submits as the signed-in User and ignores any requesterId field", async () => {
     const requester = await newRequester();
+    const other = await newRequester();
+    requireUser.mockResolvedValue(requester);
+
     const result = await submitRequest(
       { status: "idle" },
       form({
-        requesterId: requester.id,
+        requesterId: other.id,
+        title: "Badge reader broken",
+        description: "The lobby badge reader rejects every badge.",
+        idempotencyKey: randomUUID(),
+      }),
+    );
+
+    expect(result.status).toBe("created");
+    const [ticket] = await db
+      .select()
+      .from(tickets)
+      .where(eq(tickets.requesterId, requester.id));
+    expect(ticket).toBeDefined();
+  });
+
+  it("returns field errors for invalid input", async () => {
+    await newRequester();
+    const result = await submitRequest(
+      { status: "idle" },
+      form({
         title: "ab",
         description: "short",
         idempotencyKey: randomUUID(),

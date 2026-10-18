@@ -1,7 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { asc } from "drizzle-orm";
-import { getDb } from "@/infra/db/client";
-import { requesters } from "@/infra/db/schema";
+import { requireUser } from "@/infra/auth/session";
 import {
   Card,
   CardContent,
@@ -15,16 +13,8 @@ import { RequestForm } from "./RequestForm";
 export const dynamic = "force-dynamic";
 
 export default async function NewTicketPage() {
+  await requireUser();
   const idempotencyKey = randomUUID();
-  const rows = await getDb()
-    .select({
-      id: requesters.id,
-      name: requesters.name,
-      department: requesters.department,
-    })
-    .from(requesters)
-    .orderBy(asc(requesters.name));
-
   return (
     <main className="mx-auto max-w-2xl p-6">
       <Card>
@@ -39,11 +29,7 @@ export default async function NewTicketPage() {
         <CardContent>
           {/* Keyed by the idempotency key so a refresh remounts the form with
               fresh state and a fresh key. */}
-          <RequestForm
-            key={idempotencyKey}
-            requesters={rows}
-            idempotencyKey={idempotencyKey}
-          />
+          <RequestForm key={idempotencyKey} idempotencyKey={idempotencyKey} />
         </CardContent>
       </Card>
     </main>

@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { requireUser } from "@/infra/auth/session";
 import { getDb } from "@/infra/db/client";
 import { changeTicketStatus } from "@/services/changeTicketStatus";
 import { classifyManually } from "@/services/classifyManually";
@@ -78,6 +79,7 @@ export async function classifyAction(
   _previous: ManualActionState,
   data: FormData,
 ): Promise<ManualActionState> {
+  await requireUser();
   const ticketId = text(data, "ticketId");
   if (!z.uuid().safeParse(ticketId).success) return unknownTicket;
   const result = await classifyManually(getDb(), ticketId, {
@@ -94,6 +96,7 @@ export async function rerunAction(
   _previous: ManualActionState,
   data: FormData,
 ): Promise<ManualActionState> {
+  await requireUser();
   const ticketId = text(data, "ticketId");
   if (!z.uuid().safeParse(ticketId).success) return unknownTicket;
   const result = await rerunClassification(getDb(), ticketId);
@@ -104,6 +107,7 @@ export async function overrideAction(
   _previous: ManualActionState,
   data: FormData,
 ): Promise<ManualActionState> {
+  await requireUser();
   const ticketId = text(data, "ticketId");
   if (!z.uuid().safeParse(ticketId).success) return unknownTicket;
   const result = await overridePriority(getDb(), ticketId, {
@@ -117,6 +121,7 @@ export async function statusAction(
   _previous: ManualActionState,
   data: FormData,
 ): Promise<ManualActionState> {
+  await requireUser();
   const ticketId = text(data, "ticketId");
   if (!z.uuid().safeParse(ticketId).success) return unknownTicket;
   const result = await changeTicketStatus(getDb(), ticketId, {
@@ -129,6 +134,7 @@ export async function retryAction(
   _previous: ManualActionState,
   data: FormData,
 ): Promise<ManualActionState> {
+  await requireUser();
   const ticketId = text(data, "ticketId");
   if (!z.uuid().safeParse(ticketId).success) return unknownTicket;
   const dispatchId = text(data, "dispatchId");

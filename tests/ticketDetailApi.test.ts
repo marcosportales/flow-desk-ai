@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { GET } from "@/app/api/tickets/[id]/route";
-import { requesters, tickets } from "@/infra/db/schema";
+import { users, tickets } from "@/infra/db/schema";
 import { connectTestDb } from "./support/db";
 import { testDatabaseUrl } from "./support/testDatabaseUrl";
 
@@ -34,7 +34,7 @@ describe("GET /api/tickets/:id", () => {
 
   it("returns the Ticket detail without idempotency internals", async () => {
     const [requester] = await db
-      .insert(requesters)
+      .insert(users)
       .values({
         name: "Api Detail",
         email: `${randomUUID()}@test.example`,

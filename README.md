@@ -84,6 +84,9 @@ All settings live in `.env` (copy [.env.example](.env.example); it holds placeho
 | --- | --- |
 | `DATABASE_URL` | App database |
 | `FLOWDESK_API_KEY` | Static key for the public API (`X-API-Key`) |
+| `BETTER_AUTH_SECRET` | Secret that signs session cookies (Better Auth) |
+| `BETTER_AUTH_URL` | Public base URL of the app, used by Better Auth |
+| `DEMO_SIGN_IN` | `off` removes the "Sign in as…" shortcuts on `/sign-in` and makes their endpoint refuse; anything else keeps them |
 | `CLASSIFIER` | `fake` (default) or `openai_compatible` |
 | `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL` | Required for `openai_compatible` |
 | `FAKE_CLASSIFIER_MODE` | `valid`, `invalid`, `timeout`, `provider_error` |
@@ -181,7 +184,7 @@ The Vitest suite runs against real Postgres. It covers the Priority Rules, statu
 
 ## Limitations
 
-- No real authentication: a static API key, and Requesters are chosen from seed data.
+- Authentication is Better Auth with seeded fictional Users (fixed demo password); the public API uses a static key. No sign-up, no password reset.
 - Reconciliation depends on the target exposing a lookup by idempotency key. The simulated notifier does; a real system may not.
 - A single worker process is assumed for the demo, though job claiming is safe for several.
 - No semantic duplicate detection: two people reporting the same outage get two Tickets.

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { requesters } from "@/infra/db/schema";
+import { users } from "@/infra/db/schema";
 import { GET as listRequesters } from "@/app/api/requesters/route";
 import { GET as getTickets, POST as postTicket } from "@/app/api/tickets/route";
 import { connectTestDb } from "./support/db";
@@ -17,7 +17,7 @@ afterAll(() => sql.end());
 
 async function newRequester() {
   const [requester] = await db
-    .insert(requesters)
+    .insert(users)
     .values({
       name: "Api Person",
       email: `${randomUUID()}@test.example`,

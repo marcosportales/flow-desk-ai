@@ -1,8 +1,10 @@
-import { asc, inArray, like } from "drizzle-orm";
+import { asc, eq, inArray, like } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
 import {
+  accounts,
   dispatches,
-  requesters,
+  users,
+  teamMemberships,
   ticketEvents,
   tickets,
 } from "@/infra/db/schema";
@@ -17,9 +19,9 @@ afterAll(() => sql.end());
 async function seededRows() {
   const people = await db
     .select()
-    .from(requesters)
-    .where(like(requesters.email, "%@flowdesk.example"))
-    .orderBy(asc(requesters.email));
+    .from(users)
+    .where(like(users.email, "%@flowdesk.example"))
+    .orderBy(asc(users.email));
   const ids = people.map((p) => p.id);
   const ticketRows = await db
     .select()
@@ -44,11 +46,11 @@ async function seededRows() {
 }
 
 describe("seedDatabase", () => {
-  it("creates six fictional Requesters and Tickets in varied states", async () => {
+  it("creates fictional Users and Tickets in varied states", async () => {
     await seedDatabase(db);
     const seeded = await seededRows();
 
-    expect(seeded.requesters).toHaveLength(6);
+    expect(seeded.requesters).toHaveLength(11);
     expect(new Set(seeded.tickets.map((t) => t.classificationState))).toEqual(
       new Set(["pending", "classified", "needs_review"]),
     );
@@ -63,6 +65,48 @@ describe("seedDatabase", () => {
     for (const ticket of seeded.tickets) {
       const history = seeded.events.filter((e) => e.ticketId === ticket.id);
       expect(history[0]?.type).toBe("ticket_created");
+    }
+  });
+
+  it("seeds Users with no Team, one Team and two Teams", async () => {
+    await seedDatabase(db);
+    const memberships = await db
+      .select({ email: users.email, team: teamMemberships.team })
+      .from(teamMemberships)
+      .innerJoin(users, eq(users.id, teamMemberships.userId))
+      .where(like(users.email, "%@flowdesk.example"));
+    const teamsByEmail = new Map<string, string[]>();
+    for (const m of memberships) {
+      teamsByEmail.set(m.email, [...(teamsByEmail.get(m.email) ?? []), m.team]);
+    }
+
+    expect(new Set(memberships.map((m) => m.team))).toEqual(
+      new Set(["it_systems", "identity_access", "data_team", "service_desk"]),
+    );
+    expect([...teamsByEmail.values()].some((m) => m.length === 2)).toBe(true);
+    const seeded = await seededRows();
+    expect(seeded.requesters.some((u) => !teamsByEmail.has(u.email))).toBe(
+      true,
+    );
+  });
+
+  it("gives every seeded User the demo password credential", async () => {
+    await seedDatabase(db);
+    const seeded = await seededRows();
+    const credentials = await db
+      .select()
+      .from(accounts)
+      .where(
+        inArray(
+          accounts.userId,
+          seeded.requesters.map((u) => u.id),
+        ),
+      );
+
+    expect(credentials).toHaveLength(seeded.requesters.length);
+    for (const credential of credentials) {
+      expect(credential.providerId).toBe("credential");
+      expect(credential.password).toMatch(/^[0-9a-f]+:[0-9a-f]+$/);
     }
   });
 

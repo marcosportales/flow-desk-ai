@@ -13,22 +13,17 @@ import {
   FieldLabel,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import {
-  NativeSelect,
-  NativeSelectOption,
-} from "@/components/ui/native-select";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { type SubmitRequestState, submitRequest } from "./actions";
 
 type Props = {
-  requesters: { id: string; name: string; department: string }[];
   // Generated per render of the page, so every click on the same form carries
   // the same key.
   idempotencyKey: string;
 };
 
-export function RequestForm({ requesters, idempotencyKey }: Props) {
+export function RequestForm({ idempotencyKey }: Props) {
   const [state, action, pending] = useActionState<SubmitRequestState, FormData>(
     submitRequest,
     { status: "idle" },
@@ -73,29 +68,6 @@ export function RequestForm({ requesters, idempotencyKey }: Props) {
             <AlertTitle>{state.message}</AlertTitle>
           </Alert>
         )}
-        <Field data-invalid={!!errors?.requesterId}>
-          <FieldLabel htmlFor="requesterId">Requester</FieldLabel>
-          <NativeSelect
-            id="requesterId"
-            name="requesterId"
-            required
-            defaultValue=""
-            aria-invalid={!!errors?.requesterId}
-            className="w-full"
-          >
-            <NativeSelectOption value="" disabled>
-              Select a Requester
-            </NativeSelectOption>
-            {requesters.map((r) => (
-              <NativeSelectOption key={r.id} value={r.id}>
-                {r.name} ({r.department})
-              </NativeSelectOption>
-            ))}
-          </NativeSelect>
-          {errors?.requesterId && (
-            <FieldError>{errors.requesterId[0]}</FieldError>
-          )}
-        </Field>
         <Field data-invalid={!!errors?.title}>
           <FieldLabel htmlFor="title">Title</FieldLabel>
           <Input

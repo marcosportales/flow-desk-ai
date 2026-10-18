@@ -4,7 +4,7 @@ import {
   classificationAttempts,
   dispatchAttempts,
   dispatches,
-  requesters,
+  users,
   ticketEvents,
   tickets,
 } from "@/infra/db/schema";
@@ -18,7 +18,7 @@ let requesterId: string;
 
 beforeAll(async () => {
   const [requester] = await db
-    .insert(requesters)
+    .insert(users)
     .values({
       name: "Detail Person",
       email: `${randomUUID()}@test.example`,

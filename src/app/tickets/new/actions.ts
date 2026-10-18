@@ -1,5 +1,6 @@
 "use server";
 
+import { requireUser } from "@/infra/auth/session";
 import { getDb } from "@/infra/db/client";
 import { createTicket } from "@/services/createTicket";
 
@@ -21,8 +22,10 @@ export async function submitRequest(
   _previous: SubmitRequestState,
   data: FormData,
 ): Promise<SubmitRequestState> {
+  // The Requester is whoever is signed in, never a form field.
+  const user = await requireUser();
   const result = await createTicket(getDb(), {
-    requesterId: text(data, "requesterId"),
+    requesterId: user.id,
     title: text(data, "title"),
     description: text(data, "description"),
     idempotencyKey: text(data, "idempotencyKey"),

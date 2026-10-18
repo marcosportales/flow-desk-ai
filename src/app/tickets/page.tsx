@@ -31,6 +31,7 @@ import {
   dispatchStatuses,
   ticketStatuses,
 } from "@/domain/transitions";
+import { requireUser } from "@/infra/auth/session";
 import { getDb } from "@/infra/db/client";
 import {
   getTicketCounters,
@@ -115,6 +116,7 @@ export default async function TicketsPage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
+  await requireUser();
   const params = await searchParams;
   // Repeated params: the first one wins.
   const query = Object.fromEntries(

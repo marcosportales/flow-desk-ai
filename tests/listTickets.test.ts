@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { dispatches, requesters, tickets } from "@/infra/db/schema";
+import { dispatches, users, tickets } from "@/infra/db/schema";
 import {
   getTicketCounters,
   listTickets,
@@ -65,7 +65,7 @@ async function insertDispatch(
 
 beforeAll(async () => {
   const [requester] = await db
-    .insert(requesters)
+    .insert(users)
     .values({
       name: "List Person",
       email: `${randomUUID()}@test.example`,

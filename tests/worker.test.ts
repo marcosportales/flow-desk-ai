@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { eq, inArray } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
-import { jobs, requesters, tickets } from "@/infra/db/schema";
+import { jobs, users, tickets } from "@/infra/db/schema";
 import { runNextJob, type Handlers } from "@/worker/runner";
 import { connectTestDb } from "./support/db";
 
@@ -12,7 +12,7 @@ afterAll(() => sql.end());
 // never see each other's jobs.
 async function newJob(overrides: Partial<typeof jobs.$inferInsert> = {}) {
   const [requester] = await db
-    .insert(requesters)
+    .insert(users)
     .values({
       name: "Worker Test",
       email: `${randomUUID()}@test.example`,

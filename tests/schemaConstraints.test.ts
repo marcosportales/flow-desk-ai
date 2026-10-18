@@ -5,7 +5,7 @@ import {
   dispatchAttempts,
   dispatches,
   jobs,
-  requesters,
+  users,
   tickets,
 } from "@/infra/db/schema";
 import { connectTestDb, violatedConstraint } from "./support/db";
@@ -15,7 +15,7 @@ afterAll(() => sql.end());
 
 async function newRequester() {
   const [requester] = await db
-    .insert(requesters)
+    .insert(users)
     .values({
       name: "Test Person",
       email: `${randomUUID()}@test.example`,

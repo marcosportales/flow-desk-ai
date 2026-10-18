@@ -7,7 +7,7 @@ import {
   dispatchStatuses,
   ticketStatuses,
 } from "@/domain/transitions";
-import { dispatches, requesters, tickets } from "@/infra/db/schema";
+import { dispatches, users, tickets } from "@/infra/db/schema";
 import type { Db } from "./createTicket";
 
 export const MAX_PAGE_SIZE = 100;
@@ -97,7 +97,7 @@ export async function listTickets(
         id: tickets.id,
         number: tickets.number,
         title: tickets.title,
-        requesterName: requesters.name,
+        requesterName: users.name,
         category: tickets.category,
         priority: tickets.priority,
         status: tickets.status,
@@ -106,7 +106,7 @@ export async function listTickets(
         createdAt: tickets.createdAt,
       })
       .from(tickets)
-      .innerJoin(requesters, eq(requesters.id, tickets.requesterId))
+      .innerJoin(users, eq(users.id, tickets.requesterId))
       .where(where)
       .orderBy(desc(tickets.createdAt), desc(tickets.number))
       .limit(pageSize)

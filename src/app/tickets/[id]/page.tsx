@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { ArrowLeftIcon, InfoIcon } from "lucide-react";
 import { z } from "zod";
 import { formatTicketNumber } from "@/domain/ticketNumber";
+import { requireUser } from "@/infra/auth/session";
 import { getDb } from "@/infra/db/client";
 import { getTicketDetail } from "@/services/getTicketDetail";
 import { StatusBadge } from "@/components/status-badge";
@@ -86,6 +87,7 @@ export default async function TicketDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  await requireUser();
   const { id } = await params;
   if (!z.uuid().safeParse(id).success) notFound();
   const result = await getTicketDetail(getDb(), id);

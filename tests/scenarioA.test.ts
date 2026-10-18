@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { POST as postCallback } from "@/app/api/webhooks/n8n/route";
 import { FakeClassifier } from "@/infra/classifier/fake";
 import { signBody, verifySignature } from "@/infra/crypto/hmac";
-import { requesters } from "@/infra/db/schema";
+import { users } from "@/infra/db/schema";
 import { classifyTicket } from "@/services/classifyTicket";
 import { createTicket } from "@/services/createTicket";
 import { dispatchTicket } from "@/services/dispatchTicket";
@@ -63,7 +63,7 @@ describe("Scenario A: a classified ERP blocker is dispatched and confirmed", () 
   it("goes pending → classified (urgent) → Dispatch sent → succeeded, with events in order", async () => {
     const stub = await startN8nStub({ onRequest: actLikeN8n });
     const [requester] = await db
-      .insert(requesters)
+      .insert(users)
       .values({
         name: "Scenario A",
         email: `${randomUUID()}@test.example`,
