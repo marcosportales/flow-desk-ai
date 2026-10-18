@@ -14,6 +14,17 @@ export type Category = (typeof categories)[number];
 export const impactScopes = ["individual", "team", "organization"] as const;
 export type ImpactScope = (typeof impactScopes)[number];
 
+export const classificationAttemptKinds = [
+  "initial",
+  "repair",
+  "rerun",
+] as const;
+export const classificationOutcomes = [
+  "valid",
+  "invalid_output",
+  "provider_error",
+] as const;
+
 // Strict: an unexpected key means the model went off-script, so reject it.
 export const Classification = z
   .object({

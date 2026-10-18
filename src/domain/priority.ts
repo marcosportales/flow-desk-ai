@@ -42,6 +42,10 @@ const rules = [
 ] as const satisfies readonly PriorityRule[];
 
 export type PriorityRuleName = (typeof rules)[number]["name"];
+export const priorityRuleNames = rules.map((r) => r.name) as [
+  PriorityRuleName,
+  ...PriorityRuleName[],
+];
 
 export type RuleResult = {
   rule: PriorityRuleName;

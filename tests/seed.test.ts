@@ -1,5 +1,6 @@
 import { asc, eq, inArray, like } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
+import { TicketEvent } from "@/domain/ticketEvents";
 import {
   accounts,
   dispatches,
@@ -65,6 +66,15 @@ describe("seedDatabase", () => {
     for (const ticket of seeded.tickets) {
       const history = seeded.events.filter((e) => e.ticketId === ticket.id);
       expect(history[0]?.type).toBe("ticket_created");
+    }
+  });
+
+  it("seeds events whose data matches their type", async () => {
+    await seedDatabase(db);
+    const seeded = await seededRows();
+
+    for (const { type, data } of seeded.events) {
+      expect(TicketEvent.safeParse({ type, data }).error).toBeUndefined();
     }
   });
 

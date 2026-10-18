@@ -8,6 +8,7 @@ import {
   ticketEvents,
   tickets,
 } from "@/infra/db/schema";
+import type { PriorityEvaluation } from "@/domain/priority";
 import { getTicketDetail } from "@/services/getTicketDetail";
 import { connectTestDb } from "./support/db";
 
@@ -111,7 +112,7 @@ describe("getTicketDetail", () => {
         parsed: { category: "erp" },
       },
     ]);
-    const evaluation = {
+    const evaluation: PriorityEvaluation = {
       priority: "urgent",
       rule: "erp_blocker",
       evaluated: [

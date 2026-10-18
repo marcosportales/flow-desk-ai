@@ -16,10 +16,20 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
-import { categories, impactScopes } from "../../domain/classification";
+import {
+  categories,
+  classificationAttemptKinds,
+  classificationOutcomes,
+  impactScopes,
+} from "../../domain/classification";
 import { notificationKinds } from "../../domain/notifications";
 import { priorities } from "../../domain/priority";
 import { routes, teams } from "../../domain/routing";
+import type {
+  TicketEvent,
+  TicketEventData,
+  TicketEventType,
+} from "../../domain/ticketEvents";
 import {
   classificationStates,
   dispatchStatuses,
@@ -42,16 +52,14 @@ export const classificationSource = pgEnum("classification_source", [
 ]);
 export const priority = pgEnum("priority", priorities);
 export const team = pgEnum("team", teams);
-export const classificationAttemptKind = pgEnum("classification_attempt_kind", [
-  "initial",
-  "repair",
-  "rerun",
-]);
-export const classificationOutcome = pgEnum("classification_outcome", [
-  "valid",
-  "invalid_output",
-  "provider_error",
-]);
+export const classificationAttemptKind = pgEnum(
+  "classification_attempt_kind",
+  classificationAttemptKinds,
+);
+export const classificationOutcome = pgEnum(
+  "classification_outcome",
+  classificationOutcomes,
+);
 export const route = pgEnum("route", routes);
 export const dispatchStatus = pgEnum("dispatch_status", dispatchStatuses);
 export const dispatchTrigger = pgEnum("dispatch_trigger", [
@@ -376,13 +384,13 @@ export const ticketEvents = pgTable(
     ticketId: uuid("ticket_id")
       .notNull()
       .references(() => tickets.id),
-    // ticket_created, classified, priority_computed, dispatch_succeeded, …
-    // (full list in IMPLEMENTATION.md §3).
-    type: text("type").notNull(),
+    // The types and their `data`: src/domain/ticketEvents.ts. Write rows as
+    // `NewTicketEvent` so `data` is checked against its `type`.
+    type: text("type").$type<TicketEventType>().notNull(),
     actor: eventActor("actor").notNull(),
     // The signed-in User behind a `user` event; null for every other actor.
     actorUserId: uuid("actor_user_id").references(() => users.id),
-    data: jsonb("data").notNull(),
+    data: jsonb("data").$type<TicketEventData>().notNull(),
     createdAt: createdAt(),
   },
   (t) => [
@@ -393,6 +401,22 @@ export const ticketEvents = pgTable(
     ),
   ],
 );
+
+// A `ticket_events` row whose `data` matches its `type`. The columns alone
+// accept any known type with any known type's data.
+export type NewTicketEvent = Omit<
+  typeof ticketEvents.$inferInsert,
+  "type" | "data"
+> &
+  TicketEvent;
+
+// A `ticket_events` row as read, narrowed by its `type`. Rows are only ever
+// written as `NewTicketEvent`.
+export type TicketEventRow = Omit<
+  typeof ticketEvents.$inferSelect,
+  "type" | "data"
+> &
+  TicketEvent;
 
 export const notificationKind = pgEnum("notification_kind", notificationKinds);
 
