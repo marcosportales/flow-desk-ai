@@ -18,6 +18,7 @@ import { dispatchFixtures } from "./support/dispatchFixtures";
 import { testDatabaseUrl } from "./support/testDatabaseUrl";
 
 const session = vi.hoisted(() => ({ user: null as { id: string } | null }));
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/infra/auth/session", () => ({
   getRequestUser: async () => session.user,
 }));

@@ -1,17 +1,7 @@
-import {
-  rejectUnlessRequester,
-  manualTicketAction,
-} from "@/infra/api/manualAction";
-import { respondToResolution } from "@/services/respondToResolution";
+import { respond } from "@/infra/manualActions/catalog";
+import { manualActionRoute } from "@/infra/manualActions/route";
 
 export const dynamic = "force-dynamic";
 
 // The Requester closes or reopens their own Ticket (SCRUM-33).
-export async function POST(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
-  return manualTicketAction(request, params, respondToResolution, {
-    gate: rejectUnlessRequester,
-  });
-}
+export const POST = manualActionRoute(respond);
