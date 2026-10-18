@@ -29,6 +29,13 @@
       "when": 1792294375979,
       "tag": "0003_old_catseye",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792297297223,
+      "tag": "0004_notifications",
+      "breakpoints": true
     }
   ]
 }

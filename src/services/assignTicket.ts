@@ -4,6 +4,7 @@ import { type Actor, actorColumns } from "@/domain/actor";
 import { ticketTeam } from "@/domain/permissions";
 import { teamMemberships, ticketEvents, tickets } from "@/infra/db/schema";
 import type { Db } from "./createTicket";
+import { notify } from "./notifications";
 
 // Take, release and reassign (ADR 0008): assignment decides who is
 // accountable, never who may act. The caller has already checked the actor is
@@ -39,7 +40,7 @@ export async function takeTicket(
       .update(tickets)
       .set({ assigneeId: userId })
       .where(and(eq(tickets.id, ticketId), isNull(tickets.assigneeId)))
-      .returning({ id: tickets.id });
+      .returning({ id: tickets.id, requesterId: tickets.requesterId });
     if (!taken) {
       const [existing] = await tx
         .select({ id: tickets.id })
@@ -52,12 +53,21 @@ export async function takeTicket(
           }
         : { kind: "not_found" };
     }
-    await tx.insert(ticketEvents).values({
-      ticketId,
-      type: "ticket_taken",
-      ...actorColumns(actor),
-      data: { assigneeId: userId },
-    });
+    const [event] = await tx
+      .insert(ticketEvents)
+      .values({
+        ticketId,
+        type: "ticket_taken",
+        ...actorColumns(actor),
+        data: { assigneeId: userId },
+      })
+      .returning({ id: ticketEvents.id, ticketId: ticketEvents.ticketId });
+    await notify(
+      tx,
+      event!,
+      [{ userId: taken.requesterId, kind: "ticket_assigned" }],
+      actor,
+    );
     return { kind: "ok" };
   });
 }
@@ -146,12 +156,24 @@ export async function reassignTicket(
       .update(tickets)
       .set({ assigneeId })
       .where(eq(tickets.id, ticketId));
-    await tx.insert(ticketEvents).values({
-      ticketId,
-      type: "ticket_reassigned",
-      ...actorColumns(actor),
-      data: { from: ticket.assigneeId, to: assigneeId },
-    });
+    const [event] = await tx
+      .insert(ticketEvents)
+      .values({
+        ticketId,
+        type: "ticket_reassigned",
+        ...actorColumns(actor),
+        data: { from: ticket.assigneeId, to: assigneeId },
+      })
+      .returning({ id: ticketEvents.id, ticketId: ticketEvents.ticketId });
+    await notify(
+      tx,
+      event!,
+      [
+        { userId: assigneeId, kind: "assigned_to_you" },
+        { userId: ticket.requesterId, kind: "ticket_assigned" },
+      ],
+      actor,
+    );
     return { kind: "ok" };
   });
 }

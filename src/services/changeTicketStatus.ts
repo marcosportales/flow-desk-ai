@@ -8,6 +8,7 @@ import {
 } from "@/domain/transitions";
 import { ticketEvents, tickets } from "@/infra/db/schema";
 import type { Db } from "./createTicket";
+import { notifyStatusChange } from "./notifications";
 
 // Ticket Status change by a human, including resolving an Inquiry without a
 // Dispatch. Event only: it never touches Dispatches. IMPLEMENTATION.md §4.7.
@@ -49,12 +50,22 @@ export async function changeTicketStatus(
       .update(tickets)
       .set({ status: parsed.data.status })
       .where(eq(tickets.id, ticket.id));
-    await tx.insert(ticketEvents).values({
-      ticketId: ticket.id,
-      type: "status_changed",
-      ...actorColumns(actor),
-      data: { from: ticket.status, to: parsed.data.status },
-    });
+    const [event] = await tx
+      .insert(ticketEvents)
+      .values({
+        ticketId: ticket.id,
+        type: "status_changed",
+        ...actorColumns(actor),
+        data: { from: ticket.status, to: parsed.data.status },
+      })
+      .returning({ id: ticketEvents.id, ticketId: ticketEvents.ticketId });
+    await notifyStatusChange(
+      tx,
+      event!,
+      ticket.requesterId,
+      parsed.data.status,
+      actor,
+    );
     return { kind: "ok" };
   });
 }

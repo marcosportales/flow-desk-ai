@@ -8,6 +8,7 @@ import {
 } from "@/domain/transitions";
 import { ticketEvents, tickets } from "@/infra/db/schema";
 import type { Db } from "./createTicket";
+import { notifyStatusChange } from "./notifications";
 
 // The Requester's answer to a resolved Ticket: close it ("fixed") or reopen
 // it ("still broken"), with a reason shown in the timeline. It reuses the
@@ -60,12 +61,16 @@ export async function respondToResolution(
       .update(tickets)
       .set({ status: to })
       .where(eq(tickets.id, ticket.id));
-    await tx.insert(ticketEvents).values({
-      ticketId: ticket.id,
-      type: "status_changed",
-      ...actorColumns(actor),
-      data: { from: ticket.status, to, reason: parsed.data.reason },
-    });
+    const [event] = await tx
+      .insert(ticketEvents)
+      .values({
+        ticketId: ticket.id,
+        type: "status_changed",
+        ...actorColumns(actor),
+        data: { from: ticket.status, to, reason: parsed.data.reason },
+      })
+      .returning({ id: ticketEvents.id, ticketId: ticketEvents.ticketId });
+    await notifyStatusChange(tx, event!, ticket.requesterId, to, actor);
     return { kind: "ok" };
   });
 }
