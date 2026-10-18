@@ -21,7 +21,7 @@ The User on whose behalf a Request is submitted, for that Ticket only: the same 
 _Avoid_: Customer, reporter, end user
 
 **Operator**:
-A User acting on a Ticket as a member of that Ticket's Team: classifies, overrides Priority, changes status, retries Dispatches. The Manual Actions are Operator controls, never Requester controls. A User who is both Requester and Team member of the same Ticket holds both capacities; their actions are recorded under their name.
+A User acting on a Ticket as a member of that Ticket's Team: classifies, overrides Priority, changes status, retries Dispatches, and takes, releases or reassigns the Ticket. The Manual Actions are Operator controls, never Requester controls. A User who is both Requester and Team member of the same Ticket holds both capacities; their actions are recorded under their name.
 _Avoid_: Agent, admin, support staff
 
 **Integration**:

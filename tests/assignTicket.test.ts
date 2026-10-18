@@ -67,7 +67,7 @@ async function assignmentEvents(ticketId: string) {
 }
 
 describe("takeTicket", () => {
-  it("assigns an unowned Ticket to the taker and records who took it", async () => {
+  it("assigns a Ticket with no Assignee to the taker and records who took it", async () => {
     const ticket = await newTicket();
     const operator = await newUser(["service_desk"]);
 
@@ -161,7 +161,7 @@ describe("releaseTicket", () => {
     expect(await assigneeOf(ticket)).toBeNull();
   });
 
-  it("refuses an unowned Ticket", async () => {
+  it("refuses a Ticket with no Assignee", async () => {
     const ticket = await newTicket();
     const operator = await newUser(["service_desk"]);
     expect((await releaseTicket(db, ticket, userActor(operator))).kind).toBe(
@@ -193,7 +193,7 @@ describe("reassignTicket", () => {
     });
   });
 
-  it("can assign an unowned Ticket", async () => {
+  it("can assign a Ticket with no Assignee", async () => {
     const ticket = await newTicket();
     const operator = await newUser(["service_desk"]);
     const colleague = await newUser(["service_desk"]);

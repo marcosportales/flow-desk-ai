@@ -7,7 +7,7 @@ Base URL: `http://localhost:3000` (override with `APP_HOST_PORT`).
 ## Conventions
 
 - **Auth**: every endpoint except `/api/health` and `/api/webhooks/n8n` needs `X-API-Key: $FLOWDESK_API_KEY`, except the Manual Action routes below. A missing or wrong key is `401 unauthorized`. The API key identifies an Integration: it can create, read and list Tickets but not run Manual Actions.
-- **Manual Actions** (`/api/tickets/:id/classification`, `…/classification/rerun`, `…/priority-override`, `…/status`, `/api/dispatches/:id/retry`) take an Operator session cookie (ADR 0008) and refuse the API key with `403 forbidden`. No session is `401`; a signed-in User who is not an Operator of the Ticket's Team is `403 forbidden`. The web UI uses Server Actions and a Better Auth session cookie (sign in at `/sign-in`), not the key; `/api/auth/*` and `/api/demo-sign-in` are the sign-in endpoints.
+- **Manual Actions** (`/api/tickets/:id/classification`, `…/classification/rerun`, `…/priority-override`, `…/status`, `…/take`, `…/release`, `…/reassign`, `/api/dispatches/:id/retry`) take an Operator session cookie (ADR 0008) and refuse the API key with `403 forbidden`. No session is `401`; a signed-in User who is not an Operator of the Ticket's Team is `403 forbidden`. The web UI uses Server Actions and a Better Auth session cookie (sign in at `/sign-in`), not the key; `/api/auth/*` and `/api/demo-sign-in` are the sign-in endpoints.
 - **Errors** always have the same shape: `{ "error": { "code": "...", "message": "...", "details": ... } }` (`details` only for validation errors, as Zod's flattened error).
 - **Ids** are UUIDs; a malformed id is `404 not_found`.
 - **Bodies** are JSON; invalid JSON is `422 validation_error`.
@@ -54,6 +54,7 @@ List Tickets, newest first. Query parameters (all optional, empty values are ign
 | `classification_state` | `pending`, `classified`, `needs_review`             |
 | `category`             | `erp`, `access`, `data`, `inquiry`, `other`         |
 | `priority`             | `urgent`, `high`, `normal`, `low`                   |
+| `assignee`             | `unassigned`, `mine` (`mine` needs a session)       |
 | `dispatch_status`      | `pending`, `sent`, `succeeded`, `failed`, `unknown` |
 | `q`                    | Title search (max 200 chars)                        |
 | `page`, `page_size`    | Default page size 25, maximum 100                   |
@@ -62,7 +63,7 @@ Response: `{ "tickets": [...], "total": n, "page": n, "pageSize": n }`.
 
 ### `GET /api/tickets/:id`
 
-Everything about one Ticket: `ticket`, `requester`, `classificationAttempts` (with `rawOutput` for invalid outputs), `dispatches` (each with its `attempts`), `events` (the timeline, oldest first), `priorityEvaluation` (the rule table as recorded), `reason` (the AI's explanation), and `settled` (false while classification or a Dispatch is still in flight).
+Everything about one Ticket: `ticket`, `requester`, `assignee` (`{ id, name }` or `null`), `classificationAttempts` (with `rawOutput` for invalid outputs), `dispatches` (each with its `attempts`), `events` (the timeline, oldest first), `priorityEvaluation` (the rule table as recorded), `reason` (the AI's explanation), and `settled` (false while classification or a Dispatch is still in flight).
 
 ### `POST /api/tickets/:id/classification`
 
@@ -91,6 +92,18 @@ Queue another AI classification of a `needs_review` Ticket. No body. `202 { "tic
 ### `POST /api/tickets/:id/status`
 
 `{ "status": "open|resolved|closed" }`. Legal moves: open→resolved, resolved→closed, resolved→open. It records an event only and never touches Dispatches. `200`, `403`, `404`, `409 illegal_transition`, `422`.
+
+### `POST /api/tickets/:id/take`
+
+An Operator of the Ticket's Team becomes its Assignee. No body. Atomic: when two Operators take at once, one gets `200` and the other `409 conflict` ("Another Operator already took this Ticket"). `200`, `403`, `404`, `409`.
+
+### `POST /api/tickets/:id/release`
+
+Clears the Assignee. Any Operator of the Team may release (ADR 0008). No body. `200`, `403`, `404`, `409` when the Ticket has no Assignee.
+
+### `POST /api/tickets/:id/reassign`
+
+`{ "assigneeId": "<user uuid>" }`. The new Assignee must be a member of the Ticket's Team. `200`, `403`, `404`, `409` when already assigned to that User, `422` for a malformed id or a User outside the Team.
 
 ### `POST /api/dispatches/:id/retry`
 

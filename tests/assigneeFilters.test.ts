@@ -44,7 +44,7 @@ beforeAll(async () => {
   colleague = await insertOperator("Colleague Operator");
   mineId = await add("mine", me);
   await add("theirs", colleague);
-  await add("unowned", null);
+  await add("unassigned", null);
 });
 
 const viewer = () => ({ id: me, teams: ["service_desk" as const] });
@@ -60,11 +60,11 @@ const titles = async (query: Record<string, string>) => {
 
 describe("assignee filters", () => {
   it("lists every Ticket of the queue without a filter", async () => {
-    expect(await titles({})).toEqual(["mine", "theirs", "unowned"]);
+    expect(await titles({})).toEqual(["mine", "theirs", "unassigned"]);
   });
 
-  it("'unassigned' lists only unowned Tickets", async () => {
-    expect(await titles({ assignee: "unassigned" })).toEqual(["unowned"]);
+  it("'unassigned' lists only Tickets with no Assignee", async () => {
+    expect(await titles({ assignee: "unassigned" })).toEqual(["unassigned"]);
   });
 
   it("'mine' lists only Tickets assigned to the viewer", async () => {
@@ -87,7 +87,7 @@ describe("assignee filters", () => {
       result.tickets.map((t) => [t.title, t.assigneeName]),
     );
     expect(byTitle[`${marker} theirs`]).toBe("Colleague Operator");
-    expect(byTitle[`${marker} unowned`]).toBeNull();
+    expect(byTitle[`${marker} unassigned`]).toBeNull();
   });
 });
 
@@ -101,7 +101,7 @@ describe("ticket detail", () => {
     });
   });
 
-  it("has no Assignee for an unowned Ticket", async () => {
+  it("reports null while nobody has taken the Ticket", async () => {
     const id = await add("detail-unowned", null);
     const result = await getTicketDetail(db, id, viewer());
     if (result.kind !== "ok") throw new Error("not found");

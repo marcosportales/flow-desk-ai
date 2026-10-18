@@ -198,7 +198,7 @@ export const tickets = pgTable(
     priorityRule: text("priority_rule"),
     priorityOverrideReason: text("priority_override_reason"),
     team: team("team"),
-    // The Operator accountable for the Ticket; null while it is unowned
+    // The Operator accountable for the Ticket; null while no one has taken it
     // (ADR 0008). Assignment never grants or removes permission.
     assigneeId: uuid("assignee_id").references(() => users.id),
     idempotencyKey: text("idempotency_key").notNull(),

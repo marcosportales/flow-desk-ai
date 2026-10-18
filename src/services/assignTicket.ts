@@ -26,7 +26,7 @@ function userIdOf(actor: Actor): string {
   return actor.userId;
 }
 
-// Atomic: the update only matches an unowned Ticket, so of two simultaneous
+// Atomic: the update only matches a Ticket with no Assignee, so of two simultaneous
 // takes the second waits for the first, then matches nothing.
 export async function takeTicket(
   db: Db,

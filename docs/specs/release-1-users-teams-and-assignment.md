@@ -66,7 +66,7 @@ Replace "pick a Requester from a list" with real sessions.
 
 ## T6: Take, release and reassign a Ticket
 
-- `assignee` on Ticket (nullable User). A Team Operator can take an unowned Ticket, release their own, or reassign to another member of the same Team. Reassigning outside the Team is refused.
+- `assignee` on Ticket (nullable User). A Team Operator can take an unowned Ticket, release it (any Operator of the Team, so a colleague can cover for an absent Assignee, per ADR 0008), or reassign to another member of the same Team. Reassigning outside the Team is refused.
 - The queue gains "Unassigned" and "Mine" filters; the detail page shows the Assignee.
 - Taking is atomic: two Operators taking at once yield one Assignee and a clear error for the other.
 

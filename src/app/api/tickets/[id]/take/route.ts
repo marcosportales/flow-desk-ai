@@ -3,7 +3,7 @@ import { takeTicket } from "@/services/assignTicket";
 
 export const dynamic = "force-dynamic";
 
-// Take an unowned Ticket: ADR 0008.
+// Take a Ticket that has no Assignee: ADR 0008.
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
