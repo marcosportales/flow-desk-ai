@@ -4,6 +4,7 @@ import {
   dispatchAttempts,
   dispatches,
   jobs,
+  type NewTicketEvent,
   ticketEvents,
 } from "@/infra/db/schema";
 import type { Db } from "./createTicket";
@@ -52,7 +53,7 @@ export async function sweepCallbackDeadlines(db: Db): Promise<number> {
         type: "dispatch_unknown",
         actor: "system",
         data: { dispatchId: dispatch.id },
-      });
+      } satisfies NewTicketEvent);
       await tx.insert(jobs).values({
         kind: "reconcile",
         ticketId: dispatch.ticketId,

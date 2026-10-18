@@ -3,6 +3,7 @@ import { transitionDispatchStatus } from "@/domain/transitions";
 import {
   dispatchAttempts,
   dispatches,
+  type NewTicketEvent,
   ticketEvents,
   tickets,
 } from "@/infra/db/schema";
@@ -106,15 +107,19 @@ export async function reconcileDispatch(
     } else {
       await failDispatch(tx, dispatch);
     }
+    const reconciled = { dispatchId: dispatch.id, reconciled: true } as const;
     await tx.insert(ticketEvents).values({
       ticketId: dispatch.ticketId,
-      type: found ? "dispatch_succeeded" : "dispatch_failed",
       actor: "system",
-      data: {
-        dispatchId: dispatch.id,
-        reconciled: true,
-        ...(found ? { externalReference } : { error: notFoundError }),
-      },
-    });
+      ...(found
+        ? {
+            type: "dispatch_succeeded",
+            data: { ...reconciled, externalReference },
+          }
+        : {
+            type: "dispatch_failed",
+            data: { ...reconciled, error: notFoundError },
+          }),
+    } satisfies NewTicketEvent);
   });
 }

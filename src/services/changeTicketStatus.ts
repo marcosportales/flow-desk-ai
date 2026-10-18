@@ -6,7 +6,7 @@ import {
   ticketStatuses,
   transitionTicketStatus,
 } from "@/domain/transitions";
-import { ticketEvents, tickets } from "@/infra/db/schema";
+import { type NewTicketEvent, ticketEvents, tickets } from "@/infra/db/schema";
 import type { Db } from "./createTicket";
 import { notifyStatusChange } from "./notifications";
 
@@ -57,7 +57,7 @@ export async function changeTicketStatus(
         type: "status_changed",
         ...actorColumns(actor),
         data: { from: ticket.status, to: parsed.data.status },
-      })
+      } satisfies NewTicketEvent)
       .returning({ id: ticketEvents.id, ticketId: ticketEvents.ticketId });
     await notifyStatusChange(
       tx,

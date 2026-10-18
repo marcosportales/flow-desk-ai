@@ -2,7 +2,7 @@ import { type Actor, actorColumns } from "@/domain/actor";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { priorities } from "@/domain/priority";
-import { ticketEvents, tickets } from "@/infra/db/schema";
+import { type NewTicketEvent, ticketEvents, tickets } from "@/infra/db/schema";
 import type { Db } from "./createTicket";
 import { type ManualFailure, rerouteDispatch } from "./dispatchRouting";
 
@@ -68,7 +68,7 @@ export async function overridePriority(
         computed: ticket.computedPriority,
         reason,
       },
-    });
+    } satisfies NewTicketEvent);
 
     await rerouteDispatch(
       tx,

@@ -4,6 +4,7 @@ import { transitionDispatchStatus } from "@/domain/transitions";
 import {
   dispatchAttempts,
   dispatches,
+  type NewTicketEvent,
   ticketEvents,
   tickets,
 } from "@/infra/db/schema";
@@ -52,7 +53,7 @@ export async function recordDispatchCallback(
           status: dispatch.status,
           n8nExecutionId: callback.n8n_execution_id,
         },
-      });
+      } satisfies NewTicketEvent);
       return { kind: "ignored" };
     }
 
@@ -105,7 +106,7 @@ export async function recordDispatchCallback(
           ? { externalReference: callback.external_reference }
           : {}),
       },
-    });
+    } satisfies NewTicketEvent);
     return { kind: "settled" };
   });
 }

@@ -2,7 +2,12 @@ import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { type Actor, actorColumns } from "@/domain/actor";
 import { ticketTeam } from "@/domain/permissions";
-import { teamMemberships, ticketEvents, tickets } from "@/infra/db/schema";
+import {
+  teamMemberships,
+  type NewTicketEvent,
+  ticketEvents,
+  tickets,
+} from "@/infra/db/schema";
 import type { Db } from "./createTicket";
 import { notify } from "./notifications";
 
@@ -60,7 +65,7 @@ export async function takeTicket(
         type: "ticket_taken",
         ...actorColumns(actor),
         data: { assigneeId: userId },
-      })
+      } satisfies NewTicketEvent)
       .returning({ id: ticketEvents.id, ticketId: ticketEvents.ticketId });
     await notify(
       tx,
@@ -99,7 +104,7 @@ export async function releaseTicket(
       type: "ticket_released",
       ...actorColumns(actor),
       data: { from: ticket.assigneeId },
-    });
+    } satisfies NewTicketEvent);
     return { kind: "ok" };
   });
 }
@@ -163,7 +168,7 @@ export async function reassignTicket(
         type: "ticket_reassigned",
         ...actorColumns(actor),
         data: { from: ticket.assigneeId, to: assigneeId },
-      })
+      } satisfies NewTicketEvent)
       .returning({ id: ticketEvents.id, ticketId: ticketEvents.ticketId });
     await notify(
       tx,

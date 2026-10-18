@@ -4,7 +4,13 @@ import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 import { z } from "zod";
 import { type Actor, actorColumns } from "@/domain/actor";
 import * as schema from "@/infra/db/schema";
-import { jobs, users, ticketEvents, tickets } from "@/infra/db/schema";
+import {
+  jobs,
+  users,
+  type NewTicketEvent,
+  ticketEvents,
+  tickets,
+} from "@/infra/db/schema";
 
 // Any Drizzle Postgres database over this schema.
 export type Db = PgDatabase<PgQueryResultHKT, typeof schema>;
@@ -93,7 +99,7 @@ export async function createTicket(
       type: "ticket_created",
       ...actorColumns(actor),
       data: { requesterId: input.requesterId },
-    });
+    } satisfies NewTicketEvent);
     await tx.insert(jobs).values({ kind: "classify", ticketId: inserted.id });
     return { kind: "created", ticket: inserted } as const;
   });
