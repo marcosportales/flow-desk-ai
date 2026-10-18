@@ -12,9 +12,21 @@ _Avoid_: Submission, message
 The record created the moment a Request arrives, before any AI processing. Everything that happens afterwards is attached to a Ticket; a Ticket can exist without ever being classified.
 _Avoid_: Case, issue, incident (as the name of the record)
 
+**User**:
+An employee who can sign in. Every employee is a User, and a User belongs to zero or more Teams. There are no kinds of User: Requester and Operator are capacities a User holds *with respect to one Ticket*.
+_Avoid_: Account (as the person), role (as a property of a User)
+
 **Requester**:
-The employee on whose behalf a Request is submitted. In the demo, one of a fixed set of fictional people.
-_Avoid_: User, customer, reporter
+The User on whose behalf a Request is submitted, for that Ticket only: the same User is Requester of the Tickets they raised and may be Operator of other Tickets. A Requester can follow their own Tickets but takes no decisions on them. In the demo, Users are a fixed set of fictional people.
+_Avoid_: Customer, reporter, end user
+
+**Operator**:
+A User acting on a Ticket as a member of that Ticket's Team: classifies, overrides Priority, changes status, retries Dispatches. The Manual Actions are Operator controls, never Requester controls. A User who is both Requester and Team member of the same Ticket holds both capacities; their actions are recorded under their name.
+_Avoid_: Agent, admin, support staff
+
+**Integration**:
+A system, not a person, that submits Requests through the API on behalf of a Requester (for example an ERP, a mailbox or a form). It can create and read Tickets but is never an Operator.
+_Avoid_: Bot, service account, API user
 
 **Duplicate Submission**:
 The same Request arriving more than once (double click, client retry, lost response). It must yield one Ticket. Two different Requests describing the same problem are *not* Duplicate Submissions.
@@ -49,8 +61,12 @@ A named, deterministic rule that maps Classification facts to a Priority. The ru
 _Avoid_: Heuristic, policy
 
 **Team**:
-The group responsible for a Ticket, looked up from its Category in a fixed table.
-_Avoid_: Assignee, queue, suggested team
+The group responsible for a Ticket, looked up from its Category in a fixed table. Its Operators share a queue of unowned Tickets. A Ticket with no Category yet (Manual Review) is handled by `service_desk`.
+_Avoid_: Queue, suggested team
+
+**Assignee**:
+The Operator who has taken a Ticket from its Team's queue and is accountable for it. Any Operator of the Team may take, release or reassign it. Being Assignee decides who is notified and who is accountable; it is not what grants permission to act, which comes from Team membership.
+_Avoid_: Owner, resolver
 
 **Ticket Status**:
 Where a Ticket is in its human lifecycle: open, resolved or closed. Independent of whether classification or automation succeeded.
@@ -99,3 +115,11 @@ _Avoid_: Status check, verification
 **Ticket Event**:
 An entry in a Ticket's timeline recording one thing that happened to it (created, classified, Priority Rule fired, dispatched, failed, retried, overridden). Ticket Events are only ever appended.
 _Avoid_: Log, audit entry, activity
+
+**External Reference**:
+The identifier a target system gives back for the record it created from a Ticket (for example an ERP incident number). Stored on the Ticket so the two records can be traced to each other.
+_Avoid_: External ID, ERP ticket
+
+**Notification**:
+A message shown inside the app to a User about a Ticket: it was assigned to them, entered their Team's queue, or changed status. Distinct from a Dispatch, which hands work to the workflow engine.
+_Avoid_: Alert, message
