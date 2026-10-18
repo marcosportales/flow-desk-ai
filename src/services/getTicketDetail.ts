@@ -3,7 +3,7 @@ import {
   classificationAttempts,
   dispatchAttempts,
   dispatches,
-  requesters,
+  users,
   ticketEvents,
   tickets,
 } from "@/infra/db/schema";
@@ -21,7 +21,7 @@ export type TicketDetail = {
   // Idempotency internals stay server-side.
   ticket: Omit<Ticket, "requestHash" | "idempotencyKey">;
   requester: Pick<
-    typeof requesters.$inferSelect,
+    typeof users.$inferSelect,
     "id" | "name" | "email" | "department"
   >;
   classificationAttempts: (typeof classificationAttempts.$inferSelect)[];
@@ -49,14 +49,14 @@ export async function getTicketDetail(
     .select({
       ticket: tickets,
       requester: {
-        id: requesters.id,
-        name: requesters.name,
-        email: requesters.email,
-        department: requesters.department,
+        id: users.id,
+        name: users.name,
+        email: users.email,
+        department: users.department,
       },
     })
     .from(tickets)
-    .innerJoin(requesters, eq(requesters.id, tickets.requesterId))
+    .innerJoin(users, eq(users.id, tickets.requesterId))
     .where(eq(tickets.id, id));
   if (!row) return { kind: "not_found" };
 

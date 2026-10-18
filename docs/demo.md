@@ -14,7 +14,7 @@ Open `/tickets`: seeded fictional Tickets, counters, filters. One sentence on th
 
 ## 2. Scenario A, successful workflow (60 s)
 
-`/tickets/new` → pick a Requester → title "SAP unreachable", description "I haven't been able to access SAP since this morning, and I need to process some invoices." → submit.
+Sign in at `/sign-in` with "Sign in as Ana Morales" (or any seeded User), then `/tickets/new` → title "SAP unreachable", description "I haven't been able to access SAP since this morning, and I need to process some invoices." → submit.
 
 The detail page refreshes itself: classified (`erp`, blocks work), Priority **urgent** by rule `erp_blocker`, Team `it_systems`, Dispatch `pending → sent → succeeded`. Show the notifier page (message prefixed `[URGENT]`) and the matching n8n execution.
 

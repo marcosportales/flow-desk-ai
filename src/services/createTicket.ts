@@ -3,7 +3,7 @@ import { and, eq } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 import { z } from "zod";
 import * as schema from "@/infra/db/schema";
-import { jobs, requesters, ticketEvents, tickets } from "@/infra/db/schema";
+import { jobs, users, ticketEvents, tickets } from "@/infra/db/schema";
 
 // Any Drizzle Postgres database over this schema.
 export type Db = PgDatabase<PgQueryResultHKT, typeof schema>;
@@ -47,9 +47,9 @@ export async function createTicket(
 
   return db.transaction(async (tx) => {
     const [requester] = await tx
-      .select({ id: requesters.id })
-      .from(requesters)
-      .where(eq(requesters.id, input.requesterId));
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.id, input.requesterId));
     if (!requester) {
       return {
         kind: "invalid",

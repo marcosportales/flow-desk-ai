@@ -12,7 +12,7 @@ import {
   classificationAttempts,
   dispatches,
   jobs,
-  requesters,
+  users,
   ticketEvents,
   tickets,
 } from "@/infra/db/schema";
@@ -29,7 +29,7 @@ const ERP_BLOCKER =
 // classify job), so test files sharing the database never see each other.
 async function newTicket(description: string) {
   const [requester] = await db
-    .insert(requesters)
+    .insert(users)
     .values({
       name: "Classify Test",
       email: `${randomUUID()}@test.example`,

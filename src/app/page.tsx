@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { requireUser } from "@/infra/auth/session";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -8,7 +9,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 
-export default function Home() {
+export default async function Home() {
+  await requireUser();
   return (
     <main className="mx-auto max-w-3xl p-6">
       <Card>

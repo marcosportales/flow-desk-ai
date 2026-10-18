@@ -6,7 +6,7 @@ import {
   dispatchAttempts,
   dispatches,
   jobs,
-  requesters,
+  users,
   ticketEvents,
   tickets,
 } from "@/infra/db/schema";
@@ -37,7 +37,7 @@ export function dispatchFixtures(db: TestDb, sql: Sql) {
   // A classified ERP blocker with its pending Dispatch and queued dispatch job.
   async function classifiedTicket() {
     const [requester] = await db
-      .insert(requesters)
+      .insert(users)
       .values({
         name: "Dispatch Test",
         email: `${randomUUID()}@test.example`,

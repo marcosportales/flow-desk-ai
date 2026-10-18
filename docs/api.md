@@ -6,7 +6,7 @@ Base URL: `http://localhost:3000` (override with `APP_HOST_PORT`).
 
 ## Conventions
 
-- **Auth**: every endpoint except `/api/health` and `/api/webhooks/n8n` needs `X-API-Key: $FLOWDESK_API_KEY`. A missing or wrong key is `401 unauthorized`. The web UI uses Server Actions and does not use the key.
+- **Auth**: every endpoint except `/api/health` and `/api/webhooks/n8n` needs `X-API-Key: $FLOWDESK_API_KEY`. A missing or wrong key is `401 unauthorized`. The web UI uses Server Actions and a Better Auth session cookie (sign in at `/sign-in`), not the key; `/api/auth/*` and `/api/demo-sign-in` are the sign-in endpoints.
 - **Errors** always have the same shape: `{ "error": { "code": "...", "message": "...", "details": ... } }` (`details` only for validation errors, as Zod's flattened error).
 - **Ids** are UUIDs; a malformed id is `404 not_found`.
 - **Bodies** are JSON; invalid JSON is `422 validation_error`.
@@ -112,7 +112,7 @@ n8n's callback. No API key; authenticated by `X-FlowDesk-Timestamp` and `X-FlowD
 
 ### `GET /api/requesters`
 
-The seeded fictional Requesters: `{ "requesters": [{ "id", "name", "department" }] }`.
+The seeded fictional Users: `{ "requesters": [{ "id", "name", "department" }] }`.
 
 ### `GET /api/health`
 

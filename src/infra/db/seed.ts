@@ -1,25 +1,32 @@
 import { createHash } from "node:crypto";
+import { hashPassword } from "better-auth/crypto";
 import { eq, inArray } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
+import { demoPassword } from "../auth/demo";
+import type { Team } from "../../domain/routing";
 import * as schema from "./schema";
 import {
+  accounts,
   classificationAttempts,
   dispatchAttempts,
   dispatches,
   jobs,
-  requesters,
+  teamMemberships,
   ticketEvents,
   tickets,
+  users,
 } from "./schema";
 
-// Demo data. Safe to run on every start: Requesters are matched by email and
+// Demo data. Safe to run on every start: Users are matched by email and
 // Tickets by their idempotency key, so rows that already exist are left alone.
 
 // Any Drizzle Postgres database or transaction over this schema.
 type Db = PgDatabase<PgQueryResultHKT, typeof schema>;
 type Ticket = typeof tickets.$inferSelect;
 
-const seedRequesters = [
+// Requesters belong to no Team; Operators belong to one or more. Everyone signs
+// in with the same fixed demo password.
+const seedUsers: (typeof users.$inferInsert & { teams?: Team[] })[] = [
   {
     name: "Ana Morales",
     email: "ana.morales@flowdesk.example",
@@ -50,7 +57,37 @@ const seedRequesters = [
     email: "farid.haddad@flowdesk.example",
     department: "Logistics",
   },
-] satisfies (typeof requesters.$inferInsert)[];
+  {
+    name: "Grace Lindqvist",
+    email: "grace.lindqvist@flowdesk.example",
+    department: "IT",
+    teams: ["it_systems"],
+  },
+  {
+    name: "Hiro Tanaka",
+    email: "hiro.tanaka@flowdesk.example",
+    department: "IT",
+    teams: ["identity_access"],
+  },
+  {
+    name: "Ines Duarte",
+    email: "ines.duarte@flowdesk.example",
+    department: "Data",
+    teams: ["data_team"],
+  },
+  {
+    name: "Jonas Weber",
+    email: "jonas.weber@flowdesk.example",
+    department: "Service Desk",
+    teams: ["service_desk"],
+  },
+  {
+    name: "Kofi Mensah",
+    email: "kofi.mensah@flowdesk.example",
+    department: "IT",
+    teams: ["it_systems", "data_team"],
+  },
+];
 
 type ClassificationFacts = Pick<
   typeof tickets.$inferInsert,
@@ -229,20 +266,52 @@ function requestHash(requesterId: string, title: string, description: string) {
 
 export async function seedDatabase(db: Db) {
   await db.transaction(async (tx) => {
-    await tx.insert(requesters).values(seedRequesters).onConflictDoNothing();
+    const emails = seedUsers.map((u) => u.email);
+    await tx
+      .insert(users)
+      .values(
+        seedUsers.map(({ email, name, department }) => ({
+          email,
+          name,
+          department,
+        })),
+      )
+      .onConflictDoNothing();
     const seeded = await tx
-      .select({ id: requesters.id, email: requesters.email })
-      .from(requesters)
-      .where(
-        inArray(
-          requesters.email,
-          seedRequesters.map((r) => r.email),
-        ),
-      );
-    const requesterIds = new Map(seeded.map((r) => [r.email, r.id]));
+      .select({ id: users.id, email: users.email })
+      .from(users)
+      .where(inArray(users.email, emails));
+    const userIds = new Map(seeded.map((u) => [u.email, u.id]));
+
+    const withCredential = new Set(
+      (
+        await tx
+          .select({ userId: accounts.userId })
+          .from(accounts)
+          .where(inArray(accounts.userId, [...userIds.values()]))
+      ).map((a) => a.userId),
+    );
+    const passwordHash = await hashPassword(demoPassword);
+    for (const user of seedUsers) {
+      const userId = userIds.get(user.email)!;
+      if (!withCredential.has(userId)) {
+        await tx.insert(accounts).values({
+          userId,
+          accountId: userId,
+          providerId: "credential",
+          password: passwordHash,
+        });
+      }
+      if (user.teams) {
+        await tx
+          .insert(teamMemberships)
+          .values(user.teams.map((team) => ({ userId, team })))
+          .onConflictDoNothing();
+      }
+    }
 
     for (const seed of seedTickets) {
-      await seedTicket(tx, seed, requesterIds.get(seed.requester)!);
+      await seedTicket(tx, seed, userIds.get(seed.requester)!);
     }
   });
 }

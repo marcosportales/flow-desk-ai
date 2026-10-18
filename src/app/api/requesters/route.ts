@@ -1,7 +1,7 @@
 import { asc } from "drizzle-orm";
 import { rejectUnlessAuthorized } from "@/infra/api/auth";
 import { getDb } from "@/infra/db/client";
-import { requesters } from "@/infra/db/schema";
+import { users } from "@/infra/db/schema";
 
 export const dynamic = "force-dynamic";
 
@@ -11,11 +11,11 @@ export async function GET(request: Request) {
 
   const rows = await getDb()
     .select({
-      id: requesters.id,
-      name: requesters.name,
-      department: requesters.department,
+      id: users.id,
+      name: users.name,
+      department: users.department,
     })
-    .from(requesters)
-    .orderBy(asc(requesters.name));
+    .from(users)
+    .orderBy(asc(users.name));
   return Response.json({ requesters: rows });
 }

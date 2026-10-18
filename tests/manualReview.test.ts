@@ -5,7 +5,7 @@ import { FakeClassifier } from "@/infra/classifier/fake";
 import {
   dispatches,
   jobs,
-  requesters,
+  users,
   ticketEvents,
   tickets,
 } from "@/infra/db/schema";
@@ -40,7 +40,7 @@ const ticketOf = async (id: string) =>
 
 async function newTicket(title: string) {
   const [requester] = await db
-    .insert(requesters)
+    .insert(users)
     .values({ name: "R", email: `${randomUUID()}@t.example`, department: "QA" })
     .returning();
   const result = await createTicket(db, {

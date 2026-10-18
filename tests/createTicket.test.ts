@@ -4,7 +4,7 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { afterAll, describe, expect, it } from "vitest";
 import * as schema from "@/infra/db/schema";
-import { jobs, requesters, ticketEvents, tickets } from "@/infra/db/schema";
+import { jobs, users, ticketEvents, tickets } from "@/infra/db/schema";
 import { createTicket } from "@/services/createTicket";
 import { connectTestDb } from "./support/db";
 import { testDatabaseUrl } from "./support/testDatabaseUrl";
@@ -14,7 +14,7 @@ afterAll(() => sql.end());
 
 async function newRequester() {
   const [requester] = await db
-    .insert(requesters)
+    .insert(users)
     .values({
       name: "Test Person",
       email: `${randomUUID()}@test.example`,
