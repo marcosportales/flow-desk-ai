@@ -33,6 +33,7 @@ import {
 } from "@/domain/transitions";
 import { requireUser } from "@/infra/auth/session";
 import { getDb } from "@/infra/db/client";
+import { getUserTeams } from "@/services/getUserTeams";
 import {
   getTicketCounters,
   listTickets,
@@ -116,28 +117,37 @@ export default async function TicketsPage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
-  await requireUser();
+  const user = await requireUser();
   const params = await searchParams;
   // Repeated params: the first one wins.
   const query = Object.fromEntries(
     Object.entries(params).map(([k, v]) => [k, Array.isArray(v) ? v[0] : v]),
   );
   const db = getDb();
+  const teams = await getUserTeams(db, user.id);
+  // A Team member lands on their queue; everyone else sees what they raised.
+  const scope =
+    query.scope === "mine" || query.scope === "team"
+      ? query.scope
+      : teams.length > 0
+        ? "team"
+        : "mine";
   const [result, counters] = await Promise.all([
-    listTickets(db, query),
+    listTickets(db, { ...query, scope }, { id: user.id, teams }),
     getTicketCounters(db),
   ]);
 
   const pageHref = (page: number) => {
     const next = new URLSearchParams();
     for (const [k, v] of Object.entries(query))
-      if (v && k !== "page") next.set(k, v);
+      if (v && k !== "page" && k !== "scope") next.set(k, v);
+    next.set("scope", scope);
     next.set("page", String(page));
     return `/tickets?${next}`;
   };
 
   const hasFilters = Object.entries(query).some(
-    ([k, v]) => v && k !== "page" && k !== "page_size",
+    ([k, v]) => v && k !== "page" && k !== "page_size" && k !== "scope",
   );
 
   return (
@@ -154,7 +164,30 @@ export default async function TicketsPage({
         <Counter name="Urgent" value={counters.urgent} />
       </section>
 
+      {teams.length > 0 && (
+        <nav aria-label="Scope" className="flex gap-2">
+          {(
+            [
+              ["mine", "My requests"],
+              ["team", "Team queue"],
+            ] as const
+          ).map(([value, name]) => (
+            <Button
+              key={value}
+              variant={scope === value ? "default" : "outline"}
+              size="sm"
+              nativeButton={false}
+              aria-current={scope === value ? "page" : undefined}
+              render={<Link href={`/tickets?scope=${value}`} />}
+            >
+              {name}
+            </Button>
+          ))}
+        </nav>
+      )}
+
       <form method="get">
+        <input type="hidden" name="scope" value={scope} />
         <FieldGroup className="flex-row flex-wrap items-end gap-3">
           <Field className="w-auto">
             <FieldLabel htmlFor="q">Search title</FieldLabel>
@@ -182,7 +215,7 @@ export default async function TicketsPage({
             <Button
               variant="outline"
               nativeButton={false}
-              render={<Link href="/tickets" />}
+              render={<Link href={`/tickets?scope=${scope}`} />}
             >
               Clear
             </Button>
@@ -195,7 +228,7 @@ export default async function TicketsPage({
           <AlertCircleIcon />
           <AlertTitle>Some filters are invalid.</AlertTitle>
           <AlertDescription>
-            <Link href="/tickets" className="underline">
+            <Link href={`/tickets?scope=${scope}`} className="underline">
               Clear filters
             </Link>
           </AlertDescription>

@@ -1,4 +1,14 @@
-import { and, count, desc, eq, ilike, sql, type SQL } from "drizzle-orm";
+import {
+  and,
+  count,
+  desc,
+  eq,
+  ilike,
+  inArray,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 import { z } from "zod";
 import { categories } from "@/domain/classification";
 import { priorities } from "@/domain/priority";
@@ -7,6 +17,7 @@ import {
   dispatchStatuses,
   ticketStatuses,
 } from "@/domain/transitions";
+import type { Team } from "@/domain/routing";
 import { dispatches, users, tickets } from "@/infra/db/schema";
 import type { Db } from "./createTicket";
 
@@ -17,7 +28,10 @@ export const DEFAULT_PAGE_SIZE = 25;
 const optional = <T extends z.ZodType>(schema: T) =>
   z.preprocess((v) => (v === "" ? undefined : v), schema.optional());
 
+export const listScopes = ["mine", "team"] as const;
+
 export const listTicketsQuery = z.object({
+  scope: optional(z.enum(listScopes)),
   status: optional(z.enum(ticketStatuses)),
   classification_state: optional(z.enum(classificationStates)),
   category: optional(z.enum(categories)),
@@ -62,6 +76,25 @@ export type ListTicketsResult =
     }
   | { kind: "invalid"; details: unknown };
 
+// Who is looking. Without a viewer (API key access) no scope applies.
+export type ListViewer = { id: string; teams: readonly Team[] };
+
+// "My requests" is what the viewer raised; "Team queue" is the Tickets of
+// their Teams, where a Ticket with no Team belongs to service_desk.
+function scopeCondition(
+  scope: (typeof listScopes)[number] | undefined,
+  viewer: ListViewer | undefined,
+): SQL | undefined {
+  if (!scope || !viewer) return undefined;
+  if (scope === "mine") return eq(tickets.requesterId, viewer.id);
+  const teams = [...viewer.teams];
+  if (teams.length === 0) return sql`false`;
+  return or(
+    inArray(tickets.team, teams),
+    teams.includes("service_desk") ? sql`${tickets.team} is null` : undefined,
+  );
+}
+
 // Escapes LIKE wildcards so the search text is matched literally.
 function escapeLike(text: string) {
   return text.replace(/[\\%_]/g, "\\$&");
@@ -70,6 +103,7 @@ function escapeLike(text: string) {
 export async function listTickets(
   db: Db,
   rawQuery: unknown,
+  viewer?: ListViewer,
 ): Promise<ListTicketsResult> {
   const parsed = listTicketsQuery.safeParse(rawQuery);
   if (!parsed.success) {
@@ -80,6 +114,7 @@ export async function listTickets(
   const pageSize = query.page_size ?? DEFAULT_PAGE_SIZE;
 
   const conditions: (SQL | undefined)[] = [
+    scopeCondition(query.scope, viewer),
     query.status && eq(tickets.status, query.status),
     query.classification_state &&
       eq(tickets.classificationState, query.classification_state),
