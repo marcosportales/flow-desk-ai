@@ -57,6 +57,7 @@ const conflictCodes = new Set([
   "illegal_transition",
   "not_rerunnable",
   "already_queued",
+  "already_assigned",
 ]);
 
 export async function manualTicketAction(

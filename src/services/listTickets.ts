@@ -5,10 +5,12 @@ import {
   eq,
   ilike,
   inArray,
+  isNull,
   or,
   sql,
   type SQL,
 } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { z } from "zod";
 import { categories } from "@/domain/classification";
 import { priorities } from "@/domain/priority";
@@ -30,8 +32,11 @@ const optional = <T extends z.ZodType>(schema: T) =>
 
 export const listScopes = ["mine", "team"] as const;
 
+export const assigneeFilters = ["unassigned", "mine"] as const;
+
 export const listTicketsQuery = z.object({
   scope: optional(z.enum(listScopes)),
+  assignee: optional(z.enum(assigneeFilters)),
   status: optional(z.enum(ticketStatuses)),
   classification_state: optional(z.enum(classificationStates)),
   category: optional(z.enum(categories)),
@@ -58,6 +63,7 @@ export type TicketListItem = {
   number: number;
   title: string;
   requesterName: string;
+  assigneeName: string | null;
   category: (typeof tickets.$inferSelect)["category"];
   priority: (typeof tickets.$inferSelect)["priority"];
   status: (typeof tickets.$inferSelect)["status"];
@@ -107,10 +113,23 @@ function scopeCondition(
   return scope === "mine" ? raisedBy(viewer) : inTeamQueue(viewer);
 }
 
+// "Unassigned" and "Mine" narrow the queue by who is accountable. "Mine" means
+// nothing without a viewer (an Integration).
+function assigneeCondition(
+  filter: (typeof assigneeFilters)[number] | undefined,
+  viewer: Viewer | undefined,
+): SQL | undefined {
+  if (filter === "unassigned") return isNull(tickets.assigneeId);
+  if (filter === "mine" && viewer) return eq(tickets.assigneeId, viewer.id);
+  return undefined;
+}
+
 // Escapes LIKE wildcards so the search text is matched literally.
 function escapeLike(text: string) {
   return text.replace(/[\\%_]/g, "\\$&");
 }
+
+const assignee = alias(users, "assignee");
 
 export async function listTickets(
   db: Db,
@@ -128,6 +147,7 @@ export async function listTickets(
   const conditions: (SQL | undefined)[] = [
     visibleTo(viewer),
     scopeCondition(query.scope, viewer),
+    assigneeCondition(query.assignee, viewer),
     query.status && eq(tickets.status, query.status),
     query.classification_state &&
       eq(tickets.classificationState, query.classification_state),
@@ -146,6 +166,7 @@ export async function listTickets(
         number: tickets.number,
         title: tickets.title,
         requesterName: users.name,
+        assigneeName: assignee.name,
         category: tickets.category,
         priority: tickets.priority,
         status: tickets.status,
@@ -155,6 +176,7 @@ export async function listTickets(
       })
       .from(tickets)
       .innerJoin(users, eq(users.id, tickets.requesterId))
+      .leftJoin(assignee, eq(assignee.id, tickets.assigneeId))
       .where(where)
       .orderBy(desc(tickets.createdAt), desc(tickets.number))
       .limit(pageSize)

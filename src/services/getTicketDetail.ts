@@ -1,4 +1,5 @@
 import { and, asc, eq, inArray } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import {
   classificationAttempts,
   dispatchAttempts,
@@ -25,6 +26,8 @@ export type TicketDetail = {
     typeof users.$inferSelect,
     "id" | "name" | "email" | "department"
   >;
+  // The Operator accountable for the Ticket, if anyone.
+  assignee: Pick<typeof users.$inferSelect, "id" | "name"> | null;
   classificationAttempts: (typeof classificationAttempts.$inferSelect)[];
   dispatches: DispatchWithAttempts[];
   // `actorLabel` is who the timeline shows: a User's name, "Integration" or
@@ -42,6 +45,8 @@ export type TicketDetail = {
 export type TicketDetailResult =
   { kind: "ok"; detail: TicketDetail } | { kind: "not_found" };
 
+const assigneeUser = alias(users, "assignee");
+
 const inFlightDispatch = ["pending", "sent", "unknown"];
 
 export async function getTicketDetail(
@@ -58,9 +63,11 @@ export async function getTicketDetail(
         email: users.email,
         department: users.department,
       },
+      assignee: { id: assigneeUser.id, name: assigneeUser.name },
     })
     .from(tickets)
     .innerJoin(users, eq(users.id, tickets.requesterId))
+    .leftJoin(assigneeUser, eq(assigneeUser.id, tickets.assigneeId))
     .where(and(eq(tickets.id, id), visibleTo(viewer)));
   // Another User's Ticket is indistinguishable from a missing one.
   if (!row) return { kind: "not_found" };
@@ -117,6 +124,7 @@ export async function getTicketDetail(
     detail: {
       ticket,
       requester: row.requester,
+      assignee: row.ticket.assigneeId ? row.assignee : null,
       classificationAttempts: attempts,
       dispatches: dispatchRows.map((d) => ({
         ...d,

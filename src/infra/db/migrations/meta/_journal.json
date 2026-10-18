@@ -22,6 +22,13 @@
       "when": 1792292188092,
       "tag": "0002_ticket_event_actor_user",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1792294375979,
+      "tag": "0003_old_catseye",
+      "breakpoints": true
     }
   ]
 }

@@ -198,6 +198,9 @@ export const tickets = pgTable(
     priorityRule: text("priority_rule"),
     priorityOverrideReason: text("priority_override_reason"),
     team: team("team"),
+    // The Operator accountable for the Ticket; null while it is unowned
+    // (ADR 0008). Assignment never grants or removes permission.
+    assigneeId: uuid("assignee_id").references(() => users.id),
     idempotencyKey: text("idempotency_key").notNull(),
     requestHash: text("request_hash").notNull(),
     createdAt: createdAt(),
@@ -235,6 +238,7 @@ export const tickets = pgTable(
     index("tickets_category_idx").on(t.category),
     index("tickets_priority_idx").on(t.priority),
     index("tickets_created_at_idx").on(t.createdAt.desc()),
+    index("tickets_assignee_id_idx").on(t.assigneeId),
   ],
 );
 
