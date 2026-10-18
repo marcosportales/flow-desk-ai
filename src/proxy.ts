@@ -13,5 +13,5 @@ export function proxy(request: NextRequest) {
 export const config = {
   // API routes keep their own auth (X-API-Key, HMAC signature, Better Auth's
   // own endpoints); /sign-in and Next's assets are public.
-  matcher: ["/((?!api/|sign-in|_next/|favicon.ico).*)"],
+  matcher: ["/((?!api/|sign-in$|_next/|favicon.ico).*)"],
 };

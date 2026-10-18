@@ -281,19 +281,19 @@ export async function seedDatabase(db: Db) {
       .select({ id: users.id, email: users.email })
       .from(users)
       .where(inArray(users.email, emails));
-    const requesterIds = new Map(seeded.map((u) => [u.email, u.id]));
+    const userIds = new Map(seeded.map((u) => [u.email, u.id]));
 
     const withCredential = new Set(
       (
         await tx
           .select({ userId: accounts.userId })
           .from(accounts)
-          .where(inArray(accounts.userId, [...requesterIds.values()]))
+          .where(inArray(accounts.userId, [...userIds.values()]))
       ).map((a) => a.userId),
     );
     const passwordHash = await hashPassword(demoPassword);
     for (const user of seedUsers) {
-      const userId = requesterIds.get(user.email)!;
+      const userId = userIds.get(user.email)!;
       if (!withCredential.has(userId)) {
         await tx.insert(accounts).values({
           userId,
@@ -311,7 +311,7 @@ export async function seedDatabase(db: Db) {
     }
 
     for (const seed of seedTickets) {
-      await seedTicket(tx, seed, requesterIds.get(seed.requester)!);
+      await seedTicket(tx, seed, userIds.get(seed.requester)!);
     }
   });
 }
