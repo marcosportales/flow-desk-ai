@@ -1,5 +1,6 @@
-// End-to-end smoke check: Scenarios A–D (docs/plan/PLAN.md §8) against the
-// live compose stack, through the public API and the notifier and ERP admin
+// End-to-end smoke check: Scenarios A–D (docs/plan/PLAN.md §8) plus E, the
+// Requester and Operator path, against the live compose stack, through the
+// public API, session cookies and the notifier and ERP admin
 // endpoints.
 //
 //   docker compose up -d && pnpm demo:e2e
@@ -90,6 +91,7 @@ async function signIn(email: string): Promise<Record<string, string>> {
 // Kofi is in it_systems and data_team; Jonas is in service_desk, which owns a
 // Ticket in Manual Review until it has a Category.
 const DATA_OPERATOR = "kofi.mensah@flowdesk.example";
+const REQUESTER = "ana.morales@flowdesk.example";
 const SERVICE_DESK_OPERATOR = "jonas.weber@flowdesk.example";
 
 async function setNotifierMode(mode: string) {
@@ -416,6 +418,79 @@ async function scenarioD(requesterId: string) {
   }
 }
 
+// The two-User path: a Requester raises a Ticket, an Operator of its Team
+// takes and resolves it, the Requester is notified and closes it (ADR 0007,
+// 0008). Notifications have no API, so the bell in the header is read back.
+async function bellText(cookie: Record<string, string>) {
+  const res = await fetch(`${APP}/tickets`, { headers: cookie });
+  return res.text();
+}
+
+async function scenarioE() {
+  log("\nScenario E: Requester and Operator, Notification, close");
+  const requesters = await api("GET", "/api/requesters");
+  const ana = requesters.json.requesters.find(
+    (r: Json) => r.name === "Ana Morales",
+  );
+  assert(ana, "seed Requester Ana Morales present");
+  const id = await createTicket(
+    ana.id,
+    "e",
+    `Sales report wrong, two Users (${RUN})`,
+    "The monthly sales report shows incorrect data for the last quarter.",
+  );
+  await waitForDispatch(id, "succeeded");
+
+  const requester = await signIn(REQUESTER);
+  const operator = await signIn(DATA_OPERATOR);
+  const post = (path: string, body: unknown, who: Record<string, string>) =>
+    request(APP, "POST", `/api/tickets/${id}/${path}`, body, who);
+
+  assert(
+    (await post("status", { status: "resolved" }, requester)).status === 403,
+    "Requester cannot change the Status (403)",
+  );
+  const take = await post("take", undefined, operator);
+  assert(take.status === 200, "Operator takes the Ticket");
+  const resolve = await post("status", { status: "resolved" }, operator);
+  assert(resolve.status === 200, "Operator resolves the Ticket");
+
+  const bell = await bellText(requester);
+  assert(
+    /Notifications, [1-9]\d* unread/.test(bell) &&
+      bell.includes("Your Ticket was resolved"),
+    "Requester sees an unread Notification: Ticket resolved",
+  );
+  assert(
+    !(await bellText(operator)).includes("Your Ticket was resolved"),
+    "the Operator does not see the Requester's Notification",
+  );
+
+  const stranger = await post(
+    "requester-status",
+    { response: "close", reason: "fixed" },
+    operator,
+  );
+  assert(stranger.status === 403, "Operator cannot answer for the Requester");
+  const close = await post(
+    "requester-status",
+    { response: "close", reason: "Report is correct now" },
+    requester,
+  );
+  assert(close.status === 200, "Requester closes their own Ticket");
+  const d = await detail(id);
+  assert(d.ticket.status === "closed", "Ticket is closed");
+  assert(
+    d.events.some(
+      (e: Json) =>
+        e.type === "status_changed" &&
+        e.data?.to === "closed" &&
+        e.data?.reason === "Report is correct now",
+    ),
+    "closing, with its reason, is on the timeline",
+  );
+}
+
 async function main() {
   const requesterId = await preflight();
   try {
@@ -424,6 +499,7 @@ async function main() {
     await scenarioC(requesterId);
     if (SKIP_D) log("\nScenario D: skipped (E2E_SKIP_D=1)");
     else await scenarioD(requesterId);
+    await scenarioE();
   } finally {
     await setNotifierMode("ok").catch(() => undefined);
   }
