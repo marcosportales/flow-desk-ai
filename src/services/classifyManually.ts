@@ -8,7 +8,7 @@ import {
   IllegalTransitionError,
   transitionClassificationState,
 } from "@/domain/transitions";
-import { ticketEvents, tickets } from "@/infra/db/schema";
+import { type NewTicketEvent, ticketEvents, tickets } from "@/infra/db/schema";
 import type { Db } from "./createTicket";
 import { type ManualFailure, rerouteDispatch } from "./dispatchRouting";
 import { notifyQueueEntry } from "./notifications";
@@ -92,7 +92,7 @@ export async function classifyManually(
           actor: "system",
           data: evaluation,
         },
-      ])
+      ] satisfies NewTicketEvent[])
       .returning({ id: ticketEvents.id, ticketId: ticketEvents.ticketId });
     await notifyQueueEntry(tx, classified!, ticket, team, actor);
 

@@ -13,6 +13,7 @@ import {
 } from "@/infra/classifier/types";
 import {
   classificationAttempts,
+  type NewTicketEvent,
   ticketEvents,
   tickets,
 } from "@/infra/db/schema";
@@ -205,7 +206,7 @@ async function recordAttempts(
         model: classifier.model,
         error: a.error ?? null,
       },
-    });
+    } satisfies NewTicketEvent);
   }
 }
 
@@ -226,7 +227,7 @@ async function sendToReview(tx: Tx, ticket: TicketRow, reason: string) {
       type: "sent_to_review",
       actor: "system",
       data: { reason },
-    })
+    } satisfies NewTicketEvent)
     .returning({ id: ticketEvents.id, ticketId: ticketEvents.ticketId });
   await notifyQueueEntry(tx, event!, ticket, ticketTeam(ticket), systemActor);
 }
@@ -275,7 +276,7 @@ async function applyClassification(
         actor: "system",
         data: evaluation,
       },
-    ])
+    ] satisfies NewTicketEvent[])
     .returning({ id: ticketEvents.id, ticketId: ticketEvents.ticketId });
   await notifyQueueEntry(tx, classified!, ticket, team, systemActor);
 

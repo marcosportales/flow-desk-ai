@@ -1,6 +1,11 @@
 import { type Actor, actorColumns } from "@/domain/actor";
 import { eq } from "drizzle-orm";
-import { jobs, ticketEvents, tickets } from "@/infra/db/schema";
+import {
+  jobs,
+  type NewTicketEvent,
+  ticketEvents,
+  tickets,
+} from "@/infra/db/schema";
 import type { Db } from "./createTicket";
 
 // Re-run AI classification: queues a classify job for a Ticket in Manual
@@ -41,7 +46,7 @@ export async function rerunClassification(
       type: "classification_rerun_requested",
       ...actorColumns(actor),
       data: {},
-    });
+    } satisfies NewTicketEvent);
     return { kind: "queued" };
   });
 }

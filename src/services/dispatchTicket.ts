@@ -4,6 +4,7 @@ import { transitionDispatchStatus } from "@/domain/transitions";
 import {
   dispatchAttempts,
   dispatches,
+  type NewTicketEvent,
   ticketEvents,
   tickets,
 } from "@/infra/db/schema";
@@ -96,7 +97,7 @@ export async function dispatchTicket(
         outcome,
         ...failure,
       },
-    });
+    } satisfies NewTicketEvent);
 
     // A manual attempt is a single try: it does not spend the automatic budget
     // and, if it fails, goes straight back to `failed`.
@@ -130,7 +131,7 @@ export async function dispatchTicket(
             ? `n8n did not accept the manual retry: ${result.error}`
             : `n8n did not accept the Dispatch after ${autoAttempts} attempts: ${result.error}`,
         },
-      });
+      } satisfies NewTicketEvent);
     }
     return !result.ok && !exhausted;
   });

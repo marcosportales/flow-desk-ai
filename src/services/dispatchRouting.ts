@@ -4,7 +4,12 @@ import type { Category } from "@/domain/classification";
 import type { Priority } from "@/domain/priority";
 import { routeFor, type Team } from "@/domain/routing";
 import { transitionDispatchStatus } from "@/domain/transitions";
-import { dispatches, jobs, ticketEvents } from "@/infra/db/schema";
+import {
+  dispatches,
+  jobs,
+  type NewTicketEvent,
+  ticketEvents,
+} from "@/infra/db/schema";
 import type { Db } from "./createTicket";
 
 export type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
@@ -37,7 +42,7 @@ export async function createDispatch(
     type: "dispatch_created",
     actor: "system",
     data: { dispatchId: dispatch!.id, route, team: routing.team },
-  });
+  } satisfies NewTicketEvent);
   await tx.insert(jobs).values({
     kind: "dispatch",
     ticketId,
@@ -89,6 +94,6 @@ export async function rerouteDispatch(
       type: "dispatch_superseded",
       ...actorColumns(actor),
       data: { dispatchId: latest.id, supersededBy: created.id },
-    });
+    } satisfies NewTicketEvent);
   }
 }

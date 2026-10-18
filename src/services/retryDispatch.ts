@@ -1,7 +1,12 @@
 import { type Actor, actorColumns } from "@/domain/actor";
 import { eq } from "drizzle-orm";
 import { transitionDispatchStatus } from "@/domain/transitions";
-import { dispatches, jobs, ticketEvents } from "@/infra/db/schema";
+import {
+  dispatches,
+  jobs,
+  type NewTicketEvent,
+  ticketEvents,
+} from "@/infra/db/schema";
 import type { Db } from "./createTicket";
 
 // Manual retry of a failed Dispatch: docs/plan/IMPLEMENTATION.md §4.7. The
@@ -44,7 +49,7 @@ export async function retryDispatch(
       type: "dispatch_retried",
       ...actorColumns(actor),
       data: { dispatchId: dispatch.id },
-    });
+    } satisfies NewTicketEvent);
     return { kind: "queued" };
   });
 }

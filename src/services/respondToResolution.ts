@@ -6,7 +6,7 @@ import {
   type TicketStatus,
   transitionTicketStatus,
 } from "@/domain/transitions";
-import { ticketEvents, tickets } from "@/infra/db/schema";
+import { type NewTicketEvent, ticketEvents, tickets } from "@/infra/db/schema";
 import type { Db } from "./createTicket";
 import { notifyStatusChange } from "./notifications";
 
@@ -68,7 +68,7 @@ export async function respondToResolution(
         type: "status_changed",
         ...actorColumns(actor),
         data: { from: ticket.status, to, reason: parsed.data.reason },
-      })
+      } satisfies NewTicketEvent)
       .returning({ id: ticketEvents.id, ticketId: ticketEvents.ticketId });
     await notifyStatusChange(tx, event!, ticket.requesterId, to, actor);
     return { kind: "ok" };

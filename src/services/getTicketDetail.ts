@@ -6,6 +6,7 @@ import {
   dispatches,
   users,
   ticketEvents,
+  type TicketEventRow,
   tickets,
 } from "@/infra/db/schema";
 import type { PriorityEvaluation } from "@/domain/priority";
@@ -32,7 +33,7 @@ export type TicketDetail = {
   dispatches: DispatchWithAttempts[];
   // `actorLabel` is who the timeline shows: a User's name, "Integration" or
   // "System".
-  events: (typeof ticketEvents.$inferSelect & { actorLabel: string })[];
+  events: (TicketEventRow & { actorLabel: string })[];
   // The rule table as recorded when the Priority was computed.
   priorityEvaluation: PriorityEvaluation | null;
   // The AI's Reason, from the latest `classified` event.
@@ -92,7 +93,7 @@ export async function getTicketDetail(
   ]);
 
   const events = eventRows.map(({ event, actorName }) => ({
-    ...event,
+    ...(event as TicketEventRow),
     actorLabel: actorLabel(event.actor, actorName),
   }));
 
@@ -110,10 +111,10 @@ export async function getTicketDetail(
   delete internals.idempotencyKey;
   const ticket = internals as TicketDetail["ticket"];
 
-  const lastEvent = (type: string) =>
-    events.findLast((e) => e.type === type)?.data as
-      Record<string, unknown> | undefined;
-  const reason = lastEvent("classified")?.reason;
+  const classified = events.findLast((e) => e.type === "classified");
+  const priorityComputed = events.findLast(
+    (e) => e.type === "priority_computed",
+  );
 
   const settled =
     ticket.classificationState !== "pending" &&
@@ -131,10 +132,8 @@ export async function getTicketDetail(
         attempts: attemptRows.filter((a) => a.dispatchId === d.id),
       })),
       events,
-      priorityEvaluation:
-        (lastEvent("priority_computed") as PriorityEvaluation | undefined) ??
-        null,
-      reason: typeof reason === "string" ? reason : null,
+      priorityEvaluation: priorityComputed?.data ?? null,
+      reason: classified?.data.reason ?? null,
       settled,
     },
   };

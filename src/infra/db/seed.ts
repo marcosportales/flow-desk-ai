@@ -9,7 +9,9 @@ import {
   systemActor,
   userActor,
 } from "../../domain/actor";
+import { evaluatePriority } from "../../domain/priority";
 import type { Team } from "../../domain/routing";
+import type { TicketEvent } from "../../domain/ticketEvents";
 import * as schema from "./schema";
 import {
   accounts,
@@ -18,6 +20,7 @@ import {
   dispatches,
   jobs,
   teamMemberships,
+  type NewTicketEvent,
   ticketEvents,
   tickets,
   users,
@@ -382,22 +385,20 @@ async function seedTicket(
     .returning();
   if (!ticket) return;
 
-  const events: (typeof ticketEvents.$inferInsert)[] = [];
-  const event = (
-    type: string,
-    actor: Actor,
-    data: Record<string, unknown> = {},
-  ) =>
+  const events: NewTicketEvent[] = [];
+  const event = (actor: Actor, e: TicketEvent) =>
     events.push({
       ticketId: ticket.id,
-      type,
+      ...e,
       ...actorColumns(actor),
-      data,
       createdAt: at(),
     });
   const operator = userActor(operators.get(ticket.team ?? "service_desk")!);
 
-  event("ticket_created", userActor(requesterId), { number: ticket.number });
+  event(userActor(requesterId), {
+    type: "ticket_created",
+    data: { requesterId },
+  });
 
   if (!seed.attempts) {
     await db.insert(jobs).values({ kind: "classify", ticketId: ticket.id });
@@ -429,34 +430,58 @@ async function seedTicket(
       latencyMs: 800 + i * 150,
       createdAt: at(),
     });
-    event("classification_attempted", systemActor, {
-      attempt_no: i + 1,
-      outcome,
+    event(systemActor, {
+      type: "classification_attempted",
+      data: {
+        attemptNo: i + 1,
+        kind: i === 0 ? "initial" : "repair",
+        outcome,
+        provider: "fake",
+        model: "fake-classifier",
+        error: valid ? null : "Output is not valid JSON",
+      },
     });
   }
 
   if (classification) {
+    const facts = {
+      category: classification.category!,
+      summary: classification.summary!,
+      blocks_work: classification.blocksWork!,
+      impact_scope: classification.impactScope!,
+      reason: classification.reason,
+    };
     if (classified) {
-      event("classified", systemActor, {
-        category: classification.category,
-        team: classification.team,
+      event(systemActor, {
+        type: "classified",
+        data: { ...facts, team: classification.team! },
       });
     }
-    event("priority_computed", systemActor, {
-      priority: classification.computedPriority,
-      rule: classification.priorityRule,
+    event(systemActor, {
+      type: "priority_computed",
+      data: evaluatePriority(facts),
     });
     if (seed.override) {
-      event("priority_overridden", operator, {
-        from: classification.computedPriority,
-        to: seed.override.priority,
-        reason: seed.override.reason,
+      event(operator, {
+        type: "priority_overridden",
+        data: {
+          from: classification.computedPriority,
+          to: seed.override.priority,
+          computed: classification.computedPriority,
+          reason: seed.override.reason,
+        },
       });
     }
     if (!classified)
-      event("sent_to_review", systemActor, { reason: "inquiry" });
+      event(systemActor, {
+        type: "sent_to_review",
+        data: { reason: "inquiry" },
+      });
   } else if (seed.attempts) {
-    event("sent_to_review", systemActor, { reason: "invalid_output" });
+    event(systemActor, {
+      type: "sent_to_review",
+      data: { reason: "invalid_output" },
+    });
   }
 
   if (classified && seed.dispatch && priority) {
@@ -477,7 +502,10 @@ async function seedTicket(
       })
       .returning();
     const dispatchId = dispatch!.id;
-    event("dispatch_created", systemActor, { dispatch_id: dispatchId });
+    event(systemActor, {
+      type: "dispatch_created",
+      data: { dispatchId, route: dispatch!.route, team: dispatch!.team },
+    });
 
     for (let attemptNo = 1; attemptNo <= attemptCount; attemptNo++) {
       const startedAt = at();
@@ -502,9 +530,19 @@ async function seedTicket(
         finishedAt,
         createdAt: startedAt,
       });
-      event("dispatch_attempted", systemActor, {
-        dispatch_id: dispatchId,
-        attempt_no: attemptNo,
+      event(systemActor, {
+        type: "dispatch_attempted",
+        data: {
+          dispatchId,
+          attemptNo,
+          ...(succeeded
+            ? { outcome: "sent", httpStatus: 202, error: null }
+            : {
+                outcome: "failed",
+                httpStatus: 502,
+                error: "n8n webhook returned 502",
+              }),
+        },
       });
       if (succeeded) {
         await db
@@ -519,17 +557,37 @@ async function seedTicket(
       }
     }
     if (succeeded) {
-      event("dispatch_succeeded", systemActor, { dispatch_id: dispatchId });
+      event(systemActor, {
+        type: "dispatch_succeeded",
+        data: {
+          dispatchId,
+          n8nExecutionId: `seed-exec-${seed.key}`,
+          deliveredAt: null,
+          error: null,
+        },
+      });
     } else {
-      event("dispatch_failed", systemActor, { dispatch_id: dispatchId });
+      event(systemActor, {
+        type: "dispatch_failed",
+        data: {
+          dispatchId,
+          reason: `n8n did not accept the Dispatch after ${attemptCount} attempts: n8n webhook returned 502`,
+        },
+      });
     }
   }
 
   if (seed.status === "resolved" || seed.status === "closed") {
-    event("status_changed", operator, { from: "open", to: "resolved" });
+    event(operator, {
+      type: "status_changed",
+      data: { from: "open", to: "resolved" },
+    });
   }
   if (seed.status === "closed") {
-    event("status_changed", operator, { from: "resolved", to: "closed" });
+    event(operator, {
+      type: "status_changed",
+      data: { from: "resolved", to: "closed" },
+    });
   }
 
   await db.insert(ticketEvents).values(events);
