@@ -49,6 +49,27 @@ export default defineConfig([
       },
     ]),
   },
+  // One write path for status changes and Ticket Events (ADR 0010): only
+  // src/services/ticketWrites.ts checks a transition before writing it.
+  {
+    files: ["src/**"],
+    ignores: ["src/services/ticketWrites.ts", "src/infra/db/seed.ts"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: `CallExpression[callee.property.name="insert"]:matches([arguments.0.name="ticketEvents"], [arguments.0.property.name="ticketEvents"])`,
+          message:
+            "Append Ticket Events through src/services/ticketWrites.ts (appendTicketEvent or a move* function).",
+        },
+        {
+          selector: String.raw`CallExpression[callee.property.name=/^(set|values)$/] > ObjectExpression > Property:matches([key.name=/^(status|classificationState)$/], [key.value=/^(status|classificationState)$/])`,
+          message:
+            "Change a status through src/services/ticketWrites.ts (moveTicketStatus, moveClassificationState or moveDispatchStatus) so the transition is checked.",
+        },
+      ],
+    },
+  },
   globalIgnores([
     ".next/**",
     "out/**",
