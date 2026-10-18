@@ -85,6 +85,8 @@ services:
       NODE_FUNCTION_ALLOW_BUILTIN: crypto
       N8N_DIAGNOSTICS_ENABLED: "false"
       GENERIC_TIMEZONE: UTC
+      # The workflow's `erp` branch; defaulted so an older .env still works.
+      ERP_URL: ${ERP_URL:-http://erp:4100}
     entrypoint: ["/bin/sh", "/import.sh"]
     restart: "no"
     volumes:

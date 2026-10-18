@@ -21,7 +21,12 @@ export type ReconcileConfig = NotifierConfig & ErpConfig;
 
 type ReconcileJob = { dispatchId: string | null };
 
-type Lookup = { found: boolean; externalReference?: string; missing: string };
+type Lookup = {
+  found: boolean;
+  externalReference?: string;
+  // Recorded on the attempt when the target holds nothing for the id.
+  notFoundError: string;
+};
 
 // Throws when the target is unreachable.
 async function askTarget(
@@ -33,12 +38,12 @@ async function askTarget(
     return {
       found: incident !== null,
       externalReference: incident?.reference,
-      missing: "ERP holds no incident for this Dispatch",
+      notFoundError: "ERP holds no incident for this Dispatch",
     };
   }
   return {
     found: await deliveryExists(config, dispatch.id),
-    missing: "notifier holds no delivery for this Dispatch",
+    notFoundError: "notifier holds no delivery for this Dispatch",
   };
 }
 
@@ -64,8 +69,10 @@ export async function reconcileDispatch(
     // Throws when the target is unreachable: the Dispatch stays `unknown`
     // and the runner retries the job with backoff.
     const startedAt = new Date();
-    const lookup = await askTarget(config, dispatch);
-    const delivered = lookup.found;
+    const { found, externalReference, notFoundError } = await askTarget(
+      config,
+      dispatch,
+    );
 
     const [{ last }] = (await tx
       .select({ last: max(dispatchAttempts.attemptNo) })
@@ -73,27 +80,27 @@ export async function reconcileDispatch(
       .where(eq(dispatchAttempts.dispatchId, dispatch.id))) as [
       { last: number | null },
     ];
-    const outcome = delivered ? "succeeded" : "failed";
+    const outcome = found ? "succeeded" : "failed";
     await tx.insert(dispatchAttempts).values({
       dispatchId: dispatch.id,
       attemptNo: (last ?? 0) + 1,
       trigger: "reconcile",
       outcome,
-      error: delivered ? null : lookup.missing,
+      error: found ? null : notFoundError,
       startedAt,
       finishedAt: new Date(),
     });
 
-    if (delivered) {
+    if (found) {
       transitionDispatchStatus(dispatch.status, "succeeded");
       await tx
         .update(dispatches)
         .set({ status: "succeeded" })
         .where(eq(dispatches.id, dispatch.id));
-      if (lookup.externalReference) {
+      if (externalReference) {
         await tx
           .update(tickets)
-          .set({ externalReference: lookup.externalReference })
+          .set({ externalReference })
           .where(eq(tickets.id, dispatch.ticketId));
       }
     } else {
@@ -101,16 +108,12 @@ export async function reconcileDispatch(
     }
     await tx.insert(ticketEvents).values({
       ticketId: dispatch.ticketId,
-      type: delivered ? "dispatch_succeeded" : "dispatch_failed",
+      type: found ? "dispatch_succeeded" : "dispatch_failed",
       actor: "system",
       data: {
         dispatchId: dispatch.id,
         reconciled: true,
-        ...(delivered
-          ? lookup.externalReference
-            ? { externalReference: lookup.externalReference }
-            : {}
-          : { error: lookup.missing }),
+        ...(found ? { externalReference } : { error: notFoundError }),
       },
     });
   });

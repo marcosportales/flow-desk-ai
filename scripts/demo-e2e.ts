@@ -260,6 +260,11 @@ async function scenarioB(requesterId: string) {
     d.priorityEvaluation?.evaluated?.length > 0,
     "rule evaluation is recorded",
   );
+  const sent = await delivery(d.dispatches[0].id);
+  assert(
+    sent.status === 200 && String(sent.json.message ?? "").includes("[URGENT]"),
+    "notifier holds the delivery, prefixed [URGENT]",
+  );
 }
 
 async function scenarioC(requesterId: string) {
