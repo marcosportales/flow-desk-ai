@@ -245,9 +245,9 @@ Partial unique index: `unique (kind, ticket_id, coalesce(dispatch_id, '00000000-
 |---|---|---|
 | id | bigint identity pk | ordering |
 | ticket_id | uuid fk not null | index `(ticket_id, id)` |
-| type | text not null | `ticket_created`, `classification_attempted`, `classified`, `sent_to_review`, `priority_computed`, `priority_overridden`, `dispatch_created`, `dispatch_attempted`, `dispatch_succeeded`, `dispatch_failed`, `dispatch_unknown`, `dispatch_reconciled`, `dispatch_retry_requested`, `dispatch_callback_ignored` (a callback for a Dispatch that was not `sent`/`unknown`: duplicates), `status_changed` |
+| type | text not null | one of the Ticket Event types in `src/domain/ticketEvents.ts`, e.g. `ticket_created`, `classified`, `priority_computed`, `dispatch_succeeded`, `status_changed` |
 | actor | enum(`system`,`ai`,`human`,`n8n`) | |
-| data | jsonb not null | |
+| data | jsonb not null | shaped by `type`: one zod schema per type in `src/domain/ticketEvents.ts` |
 
 **Rule:** every state change and its Ticket Event are written in the same transaction, together with any follow-up job.
 
