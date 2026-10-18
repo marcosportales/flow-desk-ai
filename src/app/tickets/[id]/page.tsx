@@ -3,9 +3,11 @@ import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 import { ArrowLeftIcon, InfoIcon } from "lucide-react";
 import { z } from "zod";
+import { canRunManualActions } from "@/domain/permissions";
 import { formatTicketNumber } from "@/domain/ticketNumber";
 import { requireUser } from "@/infra/auth/session";
 import { getDb } from "@/infra/db/client";
+import { getUserTeams } from "@/services/getUserTeams";
 import { getTicketDetail } from "@/services/getTicketDetail";
 import { StatusBadge } from "@/components/status-badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -90,7 +92,9 @@ export default async function TicketDetailPage({
   const user = await requireUser();
   const { id } = await params;
   if (!z.uuid().safeParse(id).success) notFound();
-  const result = await getTicketDetail(getDb(), id, { requesterId: user.id });
+  const db = getDb();
+  const viewer = { id: user.id, teams: await getUserTeams(db, user.id) };
+  const result = await getTicketDetail(db, id, viewer);
   if (result.kind === "not_found") notFound();
   const {
     ticket,
@@ -102,6 +106,12 @@ export default async function TicketDetailPage({
     reason,
     settled,
   } = result.detail;
+  // Requester-only Users get a read-only page (ADR 0008).
+  const canAct = canRunManualActions(viewer, {
+    requesterId: ticket.requesterId,
+    category: ticket.category,
+    team: ticket.team,
+  });
   const overridden = ticket.priorityOverrideReason !== null;
   const latestDispatch = dispatches.at(-1);
   const failedDispatchId =
@@ -343,15 +353,17 @@ export default async function TicketDetailPage({
         )}
       </Section>
 
-      <Section title="Manual actions">
-        <ManualActions
-          ticketId={ticket.id}
-          ticketStatus={ticket.status}
-          classificationState={ticket.classificationState}
-          priority={ticket.priority}
-          failedDispatchId={failedDispatchId}
-        />
-      </Section>
+      {canAct && (
+        <Section title="Manual actions">
+          <ManualActions
+            ticketId={ticket.id}
+            ticketStatus={ticket.status}
+            classificationState={ticket.classificationState}
+            priority={ticket.priority}
+            failedDispatchId={failedDispatchId}
+          />
+        </Section>
+      )}
 
       <Section title="Timeline">
         <ol className="flex flex-col gap-2">

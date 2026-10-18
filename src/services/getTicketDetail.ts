@@ -9,7 +9,7 @@ import {
 } from "@/infra/db/schema";
 import type { PriorityEvaluation } from "@/domain/priority";
 import type { Db } from "./createTicket";
-import type { RequesterScope } from "./listTickets";
+import { visibleTo, type Viewer } from "./listTickets";
 
 type Ticket = typeof tickets.$inferSelect;
 type Dispatch = typeof dispatches.$inferSelect;
@@ -45,7 +45,7 @@ const inFlightDispatch = ["pending", "sent", "unknown"];
 export async function getTicketDetail(
   db: Db,
   id: string,
-  scope?: RequesterScope,
+  viewer?: Viewer,
 ): Promise<TicketDetailResult> {
   const [row] = await db
     .select({
@@ -59,12 +59,7 @@ export async function getTicketDetail(
     })
     .from(tickets)
     .innerJoin(users, eq(users.id, tickets.requesterId))
-    .where(
-      and(
-        eq(tickets.id, id),
-        scope && eq(tickets.requesterId, scope.requesterId),
-      ),
-    );
+    .where(and(eq(tickets.id, id), visibleTo(viewer)));
   // Another User's Ticket is indistinguishable from a missing one.
   if (!row) return { kind: "not_found" };
 

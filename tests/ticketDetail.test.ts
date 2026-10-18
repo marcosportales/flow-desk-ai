@@ -53,9 +53,9 @@ describe("getTicketDetail", () => {
   it("is not_found for another User's Ticket, found for the Requester", async () => {
     const t = await insertTicket();
     expect(
-      await getTicketDetail(db, t.id, { requesterId: randomUUID() }),
+      await getTicketDetail(db, t.id, { id: randomUUID(), teams: [] }),
     ).toEqual({ kind: "not_found" });
-    const own = await getTicketDetail(db, t.id, { requesterId });
+    const own = await getTicketDetail(db, t.id, { id: requesterId, teams: [] });
     expect(own.kind).toBe("ok");
   });
 

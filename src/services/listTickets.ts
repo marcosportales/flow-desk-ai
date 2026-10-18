@@ -1,4 +1,14 @@
-import { and, count, desc, eq, ilike, sql, type SQL } from "drizzle-orm";
+import {
+  and,
+  count,
+  desc,
+  eq,
+  ilike,
+  inArray,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 import { z } from "zod";
 import { categories } from "@/domain/classification";
 import { priorities } from "@/domain/priority";
@@ -7,6 +17,7 @@ import {
   dispatchStatuses,
   ticketStatuses,
 } from "@/domain/transitions";
+import type { Team } from "@/domain/routing";
 import { dispatches, users, tickets } from "@/infra/db/schema";
 import type { Db } from "./createTicket";
 
@@ -17,7 +28,10 @@ export const DEFAULT_PAGE_SIZE = 25;
 const optional = <T extends z.ZodType>(schema: T) =>
   z.preprocess((v) => (v === "" ? undefined : v), schema.optional());
 
+export const listScopes = ["mine", "team"] as const;
+
 export const listTicketsQuery = z.object({
+  scope: optional(z.enum(listScopes)),
   status: optional(z.enum(ticketStatuses)),
   classification_state: optional(z.enum(classificationStates)),
   category: optional(z.enum(categories)),
@@ -62,22 +76,46 @@ export type ListTicketsResult =
     }
   | { kind: "invalid"; details: unknown };
 
+// Who is looking: a signed-in User. Omitted for Integrations, which see every
+// Ticket and have no scope.
+export type Viewer = { id: string; teams: readonly Team[] };
+
+const raisedBy = (viewer: Viewer) => eq(tickets.requesterId, viewer.id);
+
+// The Tickets of the viewer's Teams; a Ticket with no Team belongs to
+// service_desk.
+function inTeamQueue(viewer: Viewer): SQL {
+  const teams = [...viewer.teams];
+  if (teams.length === 0) return sql`false`;
+  return or(
+    inArray(tickets.team, teams),
+    teams.includes("service_desk") ? sql`${tickets.team} is null` : undefined,
+  )!;
+}
+
+// A User sees the Tickets they raised and those of their Teams; another
+// User's Ticket is indistinguishable from a missing one.
+export const visibleTo = (viewer?: Viewer) =>
+  viewer && or(raisedBy(viewer), inTeamQueue(viewer));
+
+// "My requests" and "Team queue" narrow what the viewer may already see.
+function scopeCondition(
+  scope: (typeof listScopes)[number] | undefined,
+  viewer: Viewer | undefined,
+): SQL | undefined {
+  if (!scope || !viewer) return undefined;
+  return scope === "mine" ? raisedBy(viewer) : inTeamQueue(viewer);
+}
+
 // Escapes LIKE wildcards so the search text is matched literally.
 function escapeLike(text: string) {
   return text.replace(/[\\%_]/g, "\\$&");
 }
 
-// Restricts a read to the Tickets one User raised. Omitted for Integrations,
-// which see every Ticket.
-export type RequesterScope = { requesterId: string };
-
-const inScope = (scope?: RequesterScope) =>
-  scope && eq(tickets.requesterId, scope.requesterId);
-
 export async function listTickets(
   db: Db,
   rawQuery: unknown,
-  scope?: RequesterScope,
+  viewer?: Viewer,
 ): Promise<ListTicketsResult> {
   const parsed = listTicketsQuery.safeParse(rawQuery);
   if (!parsed.success) {
@@ -88,7 +126,8 @@ export async function listTickets(
   const pageSize = query.page_size ?? DEFAULT_PAGE_SIZE;
 
   const conditions: (SQL | undefined)[] = [
-    inScope(scope),
+    visibleTo(viewer),
+    scopeCondition(query.scope, viewer),
     query.status && eq(tickets.status, query.status),
     query.classification_state &&
       eq(tickets.classificationState, query.classification_state),
@@ -142,13 +181,13 @@ export type TicketCounters = {
 // Counters describe work still needing attention, so they cover open Tickets only.
 export async function getTicketCounters(
   db: Db,
-  scope?: RequesterScope,
+  viewer?: Viewer,
 ): Promise<TicketCounters> {
   const countOpen = async (extra?: SQL) => {
     const [r] = await db
       .select({ n: count() })
       .from(tickets)
-      .where(and(eq(tickets.status, "open"), inScope(scope), extra));
+      .where(and(eq(tickets.status, "open"), visibleTo(viewer), extra));
     return r?.n ?? 0;
   };
 

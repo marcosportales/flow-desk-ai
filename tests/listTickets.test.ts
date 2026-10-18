@@ -201,9 +201,13 @@ describe("listTickets scoped to a Requester", () => {
       .returning();
     const theirs = await insertTicket("theirs", { requesterId: other!.id });
 
-    const mine = await listTickets(db, byMarker, { requesterId });
+    const mine = await listTickets(db, byMarker, {
+      id: requesterId,
+      teams: [],
+    });
     const others = await listTickets(db, byMarker, {
-      requesterId: other!.id,
+      id: other!.id,
+      teams: [],
     });
     if (mine.kind !== "ok" || others.kind !== "ok") throw new Error("ok");
 
@@ -222,9 +226,12 @@ describe("listTickets scoped to a Requester", () => {
         department: "QA",
       })
       .returning();
-    expect(
-      await getTicketCounters(db, { requesterId: lonely!.id }),
-    ).toEqual({ open: 0, needsReview: 0, failedDispatches: 0, urgent: 0 });
+    expect(await getTicketCounters(db, { id: lonely!.id, teams: [] })).toEqual({
+      open: 0,
+      needsReview: 0,
+      failedDispatches: 0,
+      urgent: 0,
+    });
   });
 });
 
