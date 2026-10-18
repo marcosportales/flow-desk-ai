@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import {
   afterAll,
   beforeAll,
@@ -134,7 +134,8 @@ describe("requester-status endpoint", () => {
     const events = await db
       .select()
       .from(ticketEvents)
-      .where(eq(ticketEvents.ticketId, id));
+      .where(eq(ticketEvents.ticketId, id))
+      .orderBy(asc(ticketEvents.id));
     expect(events.at(-1)).toMatchObject({
       type: "status_changed",
       actor: "user",
