@@ -81,8 +81,21 @@ Recorded as ADRs in [docs/adr/](docs/adr/):
 | [0007](docs/adr/0007-better-auth-and-per-ticket-capacities.md) | Better Auth sessions; Requester and Operator are per-Ticket capacities, not roles |
 | [0008](docs/adr/0008-permission-from-team-assignment-is-accountability.md) | Permission comes from Team membership; assignment is accountability |
 | [0009](docs/adr/0009-flowdesk-is-a-layer-in-front-of-the-erp.md) | FlowDesk is an intake and orchestration layer in front of the ERP, not a replacement |
+| [0010](docs/adr/0010-invariants-live-in-code-not-prose.md) | Invariants live in code and checks, not in prose |
 
 In short: a lost HTTP response is never treated as a failed operation. Each Dispatch has one id used as the idempotency key from the app through n8n to the notifier, so a retry cannot deliver twice, and an unconfirmed Dispatch is checked against the notifier before it is retried.
+
+## How it was built
+
+Most of the code was written by AI agents (Claude Code), directed and reviewed by a human, in a fixed loop:
+
+1. **Plan and specs.** The idea and scope are in [docs/plan/PLAN.md](docs/plan/PLAN.md) and the design in [docs/plan/IMPLEMENTATION.md](docs/plan/IMPLEMENTATION.md). Each release has a spec in [docs/specs/](docs/specs/) that splits it into tasks, each with an "Accepted when" line.
+2. **Jira.** Each task is a Story or Task in the Jira project `SCRUM`, grouped under an Epic per spec.
+3. **One branch and one pull request per issue.** Decisions made along the way become ADRs, and new terms go into [GLOSSARY.md](GLOSSARY.md).
+4. **CI on every pull request** ([.github/workflows/ci.yml](.github/workflows/ci.yml)): formatting, ESLint (including import boundaries between layers), typecheck, and the test suite against a real Postgres.
+5. **Verification before merging.** The [verify skill](.claude/skills/verify/SKILL.md) rebuilds the stack, runs `pnpm demo:e2e`, and walks the issue's acceptance criteria in the browser as the Requester and the Operator.
+
+Rules that matter are enforced by code shape, lint rules and tests rather than written instructions ([ADR 0010](docs/adr/0010-invariants-live-in-code-not-prose.md)). Agent configuration is in [CLAUDE.md](CLAUDE.md) and [docs/agents/](docs/agents/).
 
 ## Configuration
 
