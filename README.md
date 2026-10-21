@@ -82,6 +82,7 @@ Recorded as ADRs in [docs/adr/](docs/adr/):
 | [0008](docs/adr/0008-permission-from-team-assignment-is-accountability.md) | Permission comes from Team membership; assignment is accountability |
 | [0009](docs/adr/0009-flowdesk-is-a-layer-in-front-of-the-erp.md) | FlowDesk is an intake and orchestration layer in front of the ERP, not a replacement |
 | [0010](docs/adr/0010-invariants-live-in-code-not-prose.md) | Invariants live in code and checks, not in prose |
+| [0011](docs/adr/0011-power-automate-as-alternative-workflow-engine.md) | Power Automate is an alternative Workflow Engine, chosen per deployment |
 
 In short: a lost HTTP response is never treated as a failed operation. Each Dispatch has one id used as the idempotency key from the app through n8n to the notifier, so a retry cannot deliver twice, and an unconfirmed Dispatch is checked against the notifier before it is retried.
 
