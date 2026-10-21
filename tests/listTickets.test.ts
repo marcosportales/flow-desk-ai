@@ -254,10 +254,22 @@ describe("listTicketsQuery", () => {
 });
 
 describe("getTicketCounters", () => {
-  // Other test files insert Tickets concurrently, so only lower bounds hold.
+  // Other test files change Tickets in the shared database concurrently, so the
+  // counters are read as a Requester who owns only this test's Tickets.
   it("counts open, needs review, failed Dispatches and urgent Tickets", async () => {
-    const before = await getTicketCounters(db);
+    const [counted] = await db
+      .insert(users)
+      .values({
+        name: "Counted Person",
+        email: `${randomUUID()}@test.example`,
+        department: "QA",
+      })
+      .returning();
+    const viewer = { id: counted!.id, teams: [] };
+    const owned = { requesterId: counted!.id };
+
     const fresh = await insertTicket("counter-urgent", {
+      ...owned,
       ...classified,
       category: "erp",
       priority: "urgent",
@@ -265,22 +277,23 @@ describe("getTicketCounters", () => {
     });
     await insertDispatch(fresh.id, 1, "failed");
     await insertTicket("counter-review", {
+      ...owned,
       classificationState: "needs_review",
     });
     await insertTicket("counter-resolved", {
+      ...owned,
       status: "resolved",
       ...classified,
       category: "erp",
       priority: "urgent",
       computedPriority: "urgent",
     });
-    const after = await getTicketCounters(db);
 
-    expect(after.open - before.open).toBeGreaterThanOrEqual(2);
-    expect(after.needsReview - before.needsReview).toBeGreaterThanOrEqual(1);
-    expect(
-      after.failedDispatches - before.failedDispatches,
-    ).toBeGreaterThanOrEqual(1);
-    expect(after.urgent - before.urgent).toBeGreaterThanOrEqual(1);
+    expect(await getTicketCounters(db, viewer)).toEqual({
+      open: 2,
+      needsReview: 1,
+      failedDispatches: 1,
+      urgent: 1,
+    });
   });
 });
