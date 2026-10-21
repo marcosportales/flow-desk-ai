@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { afterAll, describe, expect, it } from "vitest";
 import { TicketEvent } from "@/domain/ticketEvents";
 import type { NewTicketEvent } from "@/infra/db/schema";
@@ -71,7 +72,7 @@ describe("Ticket Event schema", () => {
     await recordDispatchCallback(db, {
       dispatch_id: dispatch.id,
       outcome: "succeeded",
-      n8n_execution_id: "exec-1",
+      execution_reference: "exec-1",
       external_reference: "INC-000042",
     });
 
@@ -88,6 +89,45 @@ describe("Ticket Event schema", () => {
     for (const { type, data } of events) {
       expect(TicketEvent.safeParse({ type, data }).error).toBeUndefined();
     }
+  });
+
+  // Events are never rewritten: those recorded before the Execution Reference
+  // was renamed keep `n8nExecutionId`.
+  const dispatchId = randomUUID();
+
+  it.each([
+    {
+      type: "dispatch_succeeded",
+      data: {
+        dispatchId,
+        n8nExecutionId: "42",
+        deliveredAt: null,
+        error: null,
+      },
+    },
+    {
+      type: "dispatch_failed",
+      data: { dispatchId, n8nExecutionId: "42", deliveredAt: null, error: "x" },
+    },
+    {
+      type: "dispatch_callback_ignored",
+      data: {
+        dispatchId,
+        outcome: "failed",
+        status: "succeeded",
+        n8nExecutionId: "42",
+      },
+    },
+  ])("parses a $type recorded with the old n8nExecutionId", (event) => {
+    expect(TicketEvent.safeParse(event).error).toBeUndefined();
+  });
+
+  it("rejects callback data with no Execution Reference", () => {
+    const parsed = TicketEvent.safeParse({
+      type: "dispatch_succeeded",
+      data: { dispatchId, deliveredAt: null, error: null },
+    });
+    expect(parsed.success).toBe(false);
   });
 
   it("rejects data shaped for another type", () => {

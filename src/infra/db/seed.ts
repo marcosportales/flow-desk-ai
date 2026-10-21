@@ -519,7 +519,7 @@ async function seedTicket(
           ? {
               outcome: "succeeded",
               httpStatus: 202,
-              n8nExecutionId: `seed-exec-${seed.key}`,
+              executionReference: `seed-exec-${seed.key}`,
             }
           : {
               outcome: "failed",
@@ -561,7 +561,7 @@ async function seedTicket(
         type: "dispatch_succeeded",
         data: {
           dispatchId,
-          n8nExecutionId: `seed-exec-${seed.key}`,
+          executionReference: `seed-exec-${seed.key}`,
           deliveredAt: null,
           error: null,
         },

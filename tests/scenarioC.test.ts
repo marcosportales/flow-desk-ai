@@ -66,7 +66,7 @@ describe("Scenario C: failed Dispatch, manual retry", () => {
     const raw = JSON.stringify({
       dispatch_id: failed.dispatch.id,
       outcome: "succeeded",
-      n8n_execution_id: "exec-c",
+      execution_reference: "exec-c",
     });
     await postCallback(
       new Request("http://localhost/api/webhooks/n8n", {

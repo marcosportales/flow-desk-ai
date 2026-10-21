@@ -50,7 +50,7 @@ function callback(
 const succeeded = (dispatchId: string) => ({
   dispatch_id: dispatchId,
   outcome: "succeeded",
-  n8n_execution_id: "exec-1",
+  execution_reference: "exec-1",
   delivered_at: "2026-10-17T12:00:01.000Z",
 });
 
@@ -66,7 +66,7 @@ describe("POST /api/webhooks/n8n", () => {
     expect(after.attempts).toHaveLength(1);
     expect(after.attempts[0]).toMatchObject({
       outcome: "succeeded",
-      n8nExecutionId: "exec-1",
+      executionReference: "exec-1",
       httpStatus: 202,
       error: null,
     });
@@ -75,9 +75,28 @@ describe("POST /api/webhooks/n8n", () => {
       actor: "system",
       data: {
         dispatchId: before.dispatch.id,
-        n8nExecutionId: "exec-1",
+        executionReference: "exec-1",
         deliveredAt: "2026-10-17T12:00:01.000Z",
       },
+    });
+  });
+
+  it("still settles a Dispatch from a callback with the old n8n_execution_id", async () => {
+    const before = await sentDispatch();
+    const { execution_reference, ...body } = succeeded(before.dispatch.id);
+
+    const response = await callback({
+      ...body,
+      n8n_execution_id: execution_reference,
+    });
+
+    expect(response.status).toBe(200);
+    const after = await snapshot(before.ticket.id);
+    expect(after.dispatch.status).toBe("succeeded");
+    expect(after.attempts[0]).toMatchObject({ executionReference: "exec-1" });
+    expect(after.events.at(-1)).toMatchObject({
+      type: "dispatch_succeeded",
+      data: { executionReference: "exec-1" },
     });
   });
 
@@ -117,7 +136,7 @@ describe("POST /api/webhooks/n8n", () => {
       dispatch_id: before.dispatch.id,
       outcome: "failed",
       error: "notifier answered 500",
-      n8n_execution_id: "exec-2",
+      execution_reference: "exec-2",
     });
 
     expect(response.status).toBe(200);
@@ -130,7 +149,7 @@ describe("POST /api/webhooks/n8n", () => {
     expect(after.attempts[0]).toMatchObject({
       outcome: "failed",
       error: "notifier answered 500",
-      n8nExecutionId: "exec-2",
+      executionReference: "exec-2",
     });
     expect(after.jobs.map((j) => j.status).sort()).toEqual(["done", "queued"]);
     expect(after.events.at(-1)).toMatchObject({
@@ -151,7 +170,7 @@ describe("POST /api/webhooks/n8n", () => {
       dispatch_id: before.dispatch.id,
       outcome: "failed",
       error: "notifier answered 500",
-      n8n_execution_id: "exec-3",
+      execution_reference: "exec-3",
     });
 
     const after = await snapshot(before.ticket.id);
@@ -182,7 +201,7 @@ describe("POST /api/webhooks/n8n", () => {
       dispatch_id: before.dispatch.id,
       outcome: "failed",
       error: "late duplicate",
-      n8n_execution_id: "exec-9",
+      execution_reference: "exec-9",
     });
 
     expect(response.status).toBe(200);
@@ -249,9 +268,16 @@ describe("POST /api/webhooks/n8n", () => {
     ["non-JSON", "not json"],
     [
       "a bad outcome",
-      { dispatch_id: randomUUID(), outcome: "maybe", n8n_execution_id: "e" },
+      { dispatch_id: randomUUID(), outcome: "maybe", execution_reference: "e" },
     ],
-    ["a missing dispatch_id", { outcome: "succeeded", n8n_execution_id: "e" }],
+    [
+      "a missing dispatch_id",
+      { outcome: "succeeded", execution_reference: "e" },
+    ],
+    [
+      "a missing Execution Reference",
+      { dispatch_id: randomUUID(), outcome: "succeeded" },
+    ],
   ])("answers 422 for %s", async (_name, body) => {
     const response = await callback(body);
 

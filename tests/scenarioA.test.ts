@@ -42,7 +42,7 @@ async function actLikeN8n(request: StubRequest) {
   const body = JSON.stringify({
     dispatch_id: event.dispatch_id,
     outcome: "succeeded",
-    n8n_execution_id: "stub-exec-1",
+    execution_reference: "stub-exec-1",
     delivered_at: new Date().toISOString(),
   });
   const response = await postCallback(
@@ -122,7 +122,7 @@ describe("Scenario A: a classified ERP blocker is dispatched and confirmed", () 
     expect(s.attempts[0]).toMatchObject({
       outcome: "succeeded",
       httpStatus: 202,
-      n8nExecutionId: "stub-exec-1",
+      executionReference: "stub-exec-1",
     });
     expect(s.events.map((e) => [e.type, e.actor])).toEqual([
       ["ticket_created", "integration"],

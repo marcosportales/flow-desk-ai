@@ -181,7 +181,7 @@ describe("getTicketDetail", () => {
         trigger: "manual",
         outcome: "sent",
         httpStatus: 202,
-        n8nExecutionId: "exec-9",
+        executionReference: "exec-9",
       },
     ]);
 
@@ -192,7 +192,7 @@ describe("getTicketDetail", () => {
     expect(d.classificationAttempts[0]!.rawOutput).toBe("not json");
     expect(d.dispatches.map((x) => x.sequence)).toEqual([1, 2]);
     expect(d.dispatches[0]!.attempts.map((a) => a.attemptNo)).toEqual([1, 2]);
-    expect(d.dispatches[1]!.attempts[0]!.n8nExecutionId).toBe("exec-9");
+    expect(d.dispatches[1]!.attempts[0]!.executionReference).toBe("exec-9");
     expect(d.events.map((e) => e.type)).toEqual([
       "ticket_created",
       "classified",
