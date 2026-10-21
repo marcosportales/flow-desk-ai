@@ -6,17 +6,30 @@ import type { Db } from "./createTicket";
 import { failDispatch } from "./failDispatch";
 import { appendTicketEvent, moveDispatchStatus } from "./ticketWrites";
 
-// n8n's report on a Dispatch: docs/plan/IMPLEMENTATION.md §4.5.
+// The Workflow Engine's report on a Dispatch: docs/plan/IMPLEMENTATION.md §4.5.
 
-export const DispatchCallback = z.object({
+const DispatchCallbackBody = z.object({
   dispatch_id: z.uuid(),
   outcome: z.enum(["succeeded", "failed"]),
   error: z.string().nullish(),
-  n8n_execution_id: z.string().min(1),
+  execution_reference: z.string().min(1),
   delivered_at: z.string().nullish(),
   // The record id a target system gave back, e.g. an ERP incident number.
   external_reference: z.string().trim().min(1).max(200).nullish(),
 });
+
+// n8n workflows not yet updated still send `n8n_execution_id`, the
+// Execution Reference's old name.
+export const DispatchCallback = z.preprocess(
+  (body) =>
+    body &&
+    typeof body === "object" &&
+    "n8n_execution_id" in body &&
+    !("execution_reference" in body)
+      ? { ...body, execution_reference: body.n8n_execution_id }
+      : body,
+  DispatchCallbackBody,
+);
 export type DispatchCallback = z.infer<typeof DispatchCallback>;
 
 export type CallbackResult =
@@ -44,7 +57,7 @@ export async function recordDispatchCallback(
           dispatchId: dispatch.id,
           outcome: callback.outcome,
           status: dispatch.status,
-          n8nExecutionId: callback.n8n_execution_id,
+          executionReference: callback.execution_reference,
         },
       });
       return { kind: "ignored" };
@@ -52,7 +65,7 @@ export async function recordDispatchCallback(
 
     const reported = {
       dispatchId: dispatch.id,
-      n8nExecutionId: callback.n8n_execution_id,
+      executionReference: callback.execution_reference,
       deliveredAt: callback.delivered_at ?? null,
       error: callback.error ?? null,
     };
@@ -87,7 +100,7 @@ export async function recordDispatchCallback(
         .update(dispatchAttempts)
         .set({
           outcome: callback.outcome,
-          n8nExecutionId: callback.n8n_execution_id,
+          executionReference: callback.execution_reference,
           error: callback.error ?? null,
           finishedAt: new Date(),
         })

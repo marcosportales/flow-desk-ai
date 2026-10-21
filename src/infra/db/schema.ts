@@ -324,7 +324,7 @@ export const dispatchAttempts = pgTable(
     trigger: dispatchTrigger("trigger").notNull(),
     outcome: dispatchAttemptOutcome("outcome").notNull(),
     httpStatus: integer("http_status"),
-    n8nExecutionId: text("n8n_execution_id"),
+    executionReference: text("execution_reference"),
     error: text("error"),
     startedAt: timestamp("started_at", { withTimezone: true })
       .notNull()

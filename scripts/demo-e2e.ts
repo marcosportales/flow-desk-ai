@@ -221,8 +221,8 @@ async function scenarioA(requesterId: string) {
   const dispatch = d.dispatches[0];
   assert(dispatch.route === "urgent", "Dispatch took the urgent Route");
   assert(
-    dispatch.attempts.some((a: Json) => a.n8nExecutionId),
-    "n8n execution id recorded on the attempt",
+    dispatch.attempts.some((a: Json) => a.executionReference),
+    "Execution Reference recorded on the attempt",
   );
   assert(
     inOrder(eventTypes(d), [

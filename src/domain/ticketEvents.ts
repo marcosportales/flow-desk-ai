@@ -30,13 +30,22 @@ const PriorityEvaluation = z.strictObject({
   ),
 });
 
-// n8n's callback for a Dispatch, as recorded on the event it settles.
+// The Workflow Engine's callback for a Dispatch, as recorded on the event it
+// settles.
 const callbackFields = {
   dispatchId: z.uuid(),
-  n8nExecutionId: z.string(),
   deliveredAt: z.string().nullable(),
   error: z.string().nullable(),
 };
+
+// Two variants of `fields` plus the Execution Reference: as written now, and
+// as `n8nExecutionId`, the name it had before. Events are never rewritten, so
+// both must keep parsing.
+const withExecutionReference = <F extends z.ZodRawShape>(fields: F) =>
+  [
+    z.strictObject({ ...fields, executionReference: z.string() }),
+    z.strictObject({ ...fields, n8nExecutionId: z.string() }),
+  ] as const;
 
 export const TicketEvent = z.discriminatedUnion("type", [
   event("ticket_created", z.strictObject({ requesterId: z.uuid() })),
@@ -85,7 +94,7 @@ export const TicketEvent = z.discriminatedUnion("type", [
   event(
     "dispatch_succeeded",
     z.union([
-      z.strictObject({
+      ...withExecutionReference({
         ...callbackFields,
         externalReference: z.string().optional(),
       }),
@@ -101,7 +110,7 @@ export const TicketEvent = z.discriminatedUnion("type", [
     z.union([
       // n8n did not accept the Dispatch.
       z.strictObject({ dispatchId: z.uuid(), reason: z.string() }),
-      z.strictObject(callbackFields),
+      ...withExecutionReference(callbackFields),
       z.strictObject({
         dispatchId: z.uuid(),
         reconciled: z.literal(true),
@@ -118,12 +127,13 @@ export const TicketEvent = z.discriminatedUnion("type", [
   // A callback for a Dispatch that was not `sent`/`unknown`: duplicates.
   event(
     "dispatch_callback_ignored",
-    z.strictObject({
-      dispatchId: z.uuid(),
-      outcome: z.enum(["succeeded", "failed"]),
-      status: z.enum(dispatchStatuses),
-      n8nExecutionId: z.string(),
-    }),
+    z.union(
+      withExecutionReference({
+        dispatchId: z.uuid(),
+        outcome: z.enum(["succeeded", "failed"]),
+        status: z.enum(dispatchStatuses),
+      }),
+    ),
   ),
   event(
     "status_changed",

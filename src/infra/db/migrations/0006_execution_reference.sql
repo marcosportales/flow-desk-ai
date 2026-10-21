@@ -1,0 +1,1 @@
+ALTER TABLE "dispatch_attempts" RENAME COLUMN "n8n_execution_id" TO "execution_reference";

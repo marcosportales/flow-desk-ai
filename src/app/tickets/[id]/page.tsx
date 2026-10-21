@@ -328,7 +328,7 @@ export default async function TicketDetailPage({
                         "Trigger",
                         "Outcome",
                         "HTTP",
-                        "n8n execution",
+                        "Execution Reference",
                         "Error",
                         "Started",
                       ].map((h) => (
@@ -348,7 +348,7 @@ export default async function TicketDetailPage({
                         </TableCell>
                         <TableCell>{a.httpStatus ?? "—"}</TableCell>
                         <TableCell className="font-mono text-xs">
-                          {a.n8nExecutionId ?? "—"}
+                          {a.executionReference ?? "—"}
                         </TableCell>
                         <TableCell className="text-destructive">
                           {a.error ?? ""}
