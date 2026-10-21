@@ -221,7 +221,7 @@ Partial unique index: at most one non-terminal Dispatch per Ticket: `unique (tic
 | trigger | enum(`auto`,`manual`,`reconcile`) | |
 | outcome | enum(`sent`,`succeeded`,`failed`,`unknown`) | |
 | http_status | int null | |
-| n8n_execution_id | text null | from callback; the callback settles the in-flight (latest) attempt's `outcome`, `error`, `finished_at`. Earlier attempts are never touched |
+| execution_reference | text null | the Execution Reference, from callback (`n8n_execution_id` before Release 3); the callback settles the in-flight (latest) attempt's `outcome`, `error`, `finished_at`. Earlier attempts are never touched |
 | error | text null | |
 | started_at / finished_at | timestamptz | |
 
@@ -297,7 +297,7 @@ A separate tick (every 10s) finds `sent` Dispatches past `callback_deadline`, ma
 
 ### 4.5 Callback webhook (`POST /api/webhooks/n8n`)
 - Verify the HMAC (separate secret) and reject a timestamp skew over 5 minutes.
-- Body: `{ dispatch_id, outcome: "succeeded" | "failed", error?, n8n_execution_id, delivered_at?, external_reference? }`. On `succeeded`, `external_reference` (an ERP incident number) is stored on the Ticket (ADR 0009).
+- Body: `{ dispatch_id, outcome: "succeeded" | "failed", error?, execution_reference, delivered_at?, external_reference? }`; `n8n_execution_id` is accepted in place of `execution_reference`. On `succeeded`, `external_reference` (an ERP incident number) is stored on the Ticket (ADR 0009).
 - Idempotent: a callback for an already-terminal Dispatch is recorded as an event and otherwise ignored. A callback arriving while the Dispatch is `unknown` settles it.
 
 ### 4.6 Reconcile handler

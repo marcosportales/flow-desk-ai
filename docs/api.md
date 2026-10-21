@@ -122,14 +122,14 @@ n8n's callback. No API key; authenticated by `X-FlowDesk-Timestamp` and `X-FlowD
 {
   "dispatch_id": "<uuid>",
   "outcome": "succeeded",
-  "n8n_execution_id": "42",
+  "execution_reference": "42",
   "error": null,
   "delivered_at": "2026-10-17T10:00:00Z",
   "external_reference": "INC-000001"
 }
 ```
 
-`outcome` is `succeeded | failed`. `external_reference` is optional: the id the target system gave its record (the simulated ERP's incident number). On `succeeded` it is stored on the Ticket as `externalReference`, which `GET /api/tickets` and `GET /api/tickets/:id` return. Idempotent: a callback for an already-settled Dispatch is recorded on the timeline and changes nothing. `401` on a bad signature or stale timestamp, `422` on an invalid body.
+`outcome` is `succeeded | failed`. `execution_reference` is the Execution Reference, the id n8n gives the run; the old name `n8n_execution_id` is still accepted. `external_reference` is optional: the id the target system gave its record (the simulated ERP's incident number). On `succeeded` it is stored on the Ticket as `externalReference`, which `GET /api/tickets` and `GET /api/tickets/:id` return. Idempotent: a callback for an already-settled Dispatch is recorded on the timeline and changes nothing. `401` on a bad signature or stale timestamp, `422` on an invalid body.
 
 ### `GET /api/requesters`
 
