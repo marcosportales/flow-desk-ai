@@ -86,8 +86,16 @@ _Avoid_: Triage, fallback
 
 ## Automation
 
+**Workflow Engine**:
+The external system that carries out a Dispatch and reports its outcome back: n8n or Power Automate, one per deployment. It executes; it never decides Category, Priority or Team.
+_Avoid_: Automation tool, orchestrator, n8n (as the generic name)
+
+**Execution Reference**:
+The identifier the Workflow Engine gives to the run that carried out a Dispatch Attempt, so the attempt can be found in that engine's history.
+_Avoid_: n8n execution id, run id
+
 **Dispatch**:
-The act of handing a classified Ticket's routing decision (Category, Priority, Team) to the workflow engine so it performs an action, such as notifying a Team. Has its own Dispatch Status, separate from the Ticket Status.
+The act of handing a classified Ticket's routing decision (Category, Priority, Team) to the Workflow Engine so it performs an action, such as notifying a Team. Has its own Dispatch Status, separate from the Ticket Status.
 _Avoid_: Trigger, notification (for the act itself), webhook call
 
 **Dispatch Status**:
