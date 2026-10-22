@@ -1,0 +1,42 @@
+# Public face of the `power-automate` compose profile, behind a cloudflared
+# quick tunnel. Only what a cloud Workflow Engine needs answers; everything
+# else, the web UI and API included, is a 404 from here.
+{
+	admin off
+	auto_https off
+}
+
+:8080 {
+	@callback {
+		method POST
+		path /callback
+	}
+	handle @callback {
+		rewrite * /api/webhooks/power-automate
+		reverse_proxy app:3000
+	}
+
+	# Only what the flow calls: the notifier's delivery check and record, and
+	# the ERP's incident create. /admin/mode, lookups and the UIs stay private.
+	@notifier {
+		method GET POST
+		path /notifier/deliveries /notifier/deliveries/*
+	}
+	handle @notifier {
+		uri strip_prefix /notifier
+		reverse_proxy notifier:4000
+	}
+
+	@erp {
+		method POST
+		path /erp/incidents
+	}
+	handle @erp {
+		uri strip_prefix /erp
+		reverse_proxy erp:4100
+	}
+
+	handle {
+		respond 404
+	}
+}
