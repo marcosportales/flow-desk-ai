@@ -50,6 +50,8 @@ Derived from [PLAN.md](./PLAN.md) through a design review. Vocabulary follows [G
 | `n8n` | `n8nio/n8n` (pinned) | Runs the dispatch workflow |
 | `n8n-import` | `n8nio/n8n` one-shot | `n8n import:workflow` from `n8n/workflows/*.json` on first start |
 | `notifier` | `services/notifier` (tiny Node HTTP server) | Simulated notification target with failure modes and a received-messages page |
+| `tunnel-proxy` | `caddy` (pinned), profile `power-automate` | Exposes only the Power Automate callback and the notifier and ERP routes the flow calls |
+| `tunnel` | `cloudflare/cloudflared` (pinned), profile `power-automate` | Quick tunnel to `tunnel-proxy`; `pnpm tunnel:url` writes its `/callback` to `.env` |
 
 `migrate` runs as a one-shot step before `app` and `worker` start (`drizzle-kit migrate` + seed).
 
