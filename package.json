@@ -21,7 +21,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "demo:e2e": "tsx scripts/demo-e2e.ts"
+    "demo:e2e": "tsx scripts/demo-e2e.ts",
+    "tunnel:url": "tsx scripts/tunnel-url.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",
