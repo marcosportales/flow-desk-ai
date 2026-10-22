@@ -64,7 +64,7 @@ For a guided tour, follow the [demo script](docs/demo.md) (about 4 minutes). The
 | `notifier` | Simulated notification target with failure modes |
 | `erp` | Simulated ERP: `erp` Tickets become incidents; same failure modes ([ADR 0009](docs/adr/0009-flowdesk-is-a-layer-in-front-of-the-erp.md)) |
 
-Code layout: `src/domain` (pure rules, no I/O), `src/services` (use cases, called by both Route Handlers and Server Actions), `src/infra` (database, Classifier, n8n client, HMAC), `src/worker`, `services/notifier`, `services/erp`, `n8n/workflows`. The full design is in [docs/plan/IMPLEMENTATION.md](docs/plan/IMPLEMENTATION.md).
+Code layout: `src/domain` (pure rules, no I/O), `src/services` (use cases, called by both Route Handlers and Server Actions), `src/infra` (database, Classifier, Workflow Engine client, HMAC), `src/worker`, `services/notifier`, `services/erp`, `n8n/workflows`. The full design is in [docs/plan/IMPLEMENTATION.md](docs/plan/IMPLEMENTATION.md).
 
 ## Design decisions
 
@@ -112,10 +112,13 @@ All settings live in `.env` (copy [.env.example](.env.example); it holds placeho
 | `CLASSIFIER` | `fake` (default) or `openai_compatible` |
 | `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL` | Required for `openai_compatible` |
 | `FAKE_CLASSIFIER_MODE` | `valid`, `invalid`, `timeout`, `provider_error` |
-| `N8N_WEBHOOK_URL`, `FLOWDESK_CALLBACK_URL` | Where the worker sends events, and where n8n calls back |
+| `WORKFLOW_ENGINE` | `n8n` (default) or `power_automate`: the Workflow Engine every Dispatch goes to ([ADR 0011](docs/adr/0011-power-automate-as-alternative-workflow-engine.md)) |
+| `N8N_WEBHOOK_URL`, `FLOWDESK_CALLBACK_URL` | Where the worker sends events to n8n, and where the Workflow Engine calls back (default: the selected engine's route on `app`) |
+| `POWER_AUTOMATE_TRIGGER_URL` | The flow's HTTP trigger URL; it carries the `sig` that authenticates the call, so keep it secret. Required for `power_automate` |
+| `POWER_AUTOMATE_TO_FLOWDESK_SECRET` | Bearer secret Power Automate sends on `POST /api/webhooks/power-automate`. Required for `power_automate` |
 | `FLOWDESK_TO_N8N_SECRET`, `N8N_TO_FLOWDESK_SECRET` | HMAC secrets for each direction |
 | `NOTIFIER_URL` | Notifier base URL (Reconciliation) |
-| `DISPATCH_CALLBACK_TIMEOUT_SECONDS` | Wait for n8n's callback before a Dispatch becomes `unknown` |
+| `DISPATCH_CALLBACK_TIMEOUT_SECONDS` | Wait for the Workflow Engine's callback before a Dispatch becomes `unknown` |
 | `TUNNEL_METRICS_HOST_PORT` | Loopback port of the tunnel's metrics, read by `pnpm tunnel:url` (default `2000`) |
 
 Change the `change-me` values before exposing the stack anywhere.

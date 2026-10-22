@@ -6,7 +6,7 @@ Base URL: `http://localhost:3000` (override with `APP_HOST_PORT`).
 
 ## Conventions
 
-- **Auth**: every endpoint except `/api/health` and `/api/webhooks/n8n` needs `X-API-Key: $FLOWDESK_API_KEY`, except the Manual Action routes below. A missing or wrong key is `401 unauthorized`. The API key identifies an Integration: it can create, read and list Tickets but not run Manual Actions.
+- **Auth**: every endpoint except `/api/health`, `/api/webhooks/n8n` and `/api/webhooks/power-automate` needs `X-API-Key: $FLOWDESK_API_KEY`, except the Manual Action routes below. A missing or wrong key is `401 unauthorized`. The API key identifies an Integration: it can create, read and list Tickets but not run Manual Actions.
 - **Manual Actions** (`/api/tickets/:id/classification`, `…/classification/rerun`, `…/priority-override`, `…/status`, `…/take`, `…/release`, `…/reassign`, `/api/dispatches/:id/retry`) take an Operator session cookie (ADR 0008) and refuse the API key with `403 forbidden`. No session is `401`; a signed-in User who is not an Operator of the Ticket's Team is `403 forbidden`. The web UI uses Server Actions and a Better Auth session cookie (sign in at `/sign-in`), not the key; `/api/auth/*` and `/api/demo-sign-in` are the sign-in endpoints.
 - **The Requester's answer** (`/api/tickets/:id/requester-status`) takes the session cookie of the Ticket's Requester and refuses the API key with `403 forbidden`. No session is `401`; any other User is `403 forbidden`.
 - **Errors** always have the same shape: `{ "error": { "code": "...", "message": "...", "details": ... } }` (`details` only for validation errors, as Zod's flattened error).
@@ -130,6 +130,10 @@ n8n's callback. No API key; authenticated by `X-FlowDesk-Timestamp` and `X-FlowD
 ```
 
 `outcome` is `succeeded | failed`. `execution_reference` is the Execution Reference, the id n8n gives the run; the old name `n8n_execution_id` is still accepted. `external_reference` is optional: the id the target system gave its record (the simulated ERP's incident number). On `succeeded` it is stored on the Ticket as `externalReference`, which `GET /api/tickets` and `GET /api/tickets/:id` return. Idempotent: a callback for an already-settled Dispatch is recorded on the timeline and changes nothing. `401` on a bad signature or stale timestamp, `422` on an invalid body.
+
+### `POST /api/webhooks/power-automate`
+
+Power Automate's callback, the same body as n8n's above; `execution_reference` is the flow's run name. No API key and no HMAC (Power Automate cannot compute one, ADR 0011): authenticated by `Authorization: Bearer $POWER_AUTOMATE_TO_FLOWDESK_SECRET`. Active whatever `WORKFLOW_ENGINE` says, so a Dispatch in flight when the engine is switched still settles. `401` on a missing or wrong bearer (always, when the secret is not set), `404` for an unknown `dispatch_id`, `422` on an invalid body.
 
 ### `GET /api/requesters`
 
