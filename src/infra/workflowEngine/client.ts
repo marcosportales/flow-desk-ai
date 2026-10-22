@@ -1,7 +1,11 @@
+import { workflowEngineLabels } from "@/domain/workflowEngine";
 import { signBody } from "@/infra/crypto/hmac";
-import type { DispatchConfig } from "./config";
+import type { EngineTarget } from "./config";
 
-// Signed event client for the n8n dispatch webhook: IMPLEMENTATION.md §4.4.
+// Sends a Dispatch event to the configured Workflow Engine:
+// IMPLEMENTATION.md §4.4, ADR 0011. n8n gets the body HMAC-signed; Power
+// Automate cannot verify HMAC, and its trigger URL's `sig` authenticates the
+// call instead.
 
 const REQUEST_TIMEOUT_MS = 10_000;
 
@@ -10,16 +14,17 @@ export type SendResult =
   | { ok: false; httpStatus: number | null; error: string };
 
 export async function sendDispatchEvent(
-  n8n: Pick<DispatchConfig, "webhookUrl" | "secret">,
+  engine: EngineTarget,
   body: string,
 ): Promise<SendResult> {
+  const [url, auth] =
+    engine.kind === "n8n"
+      ? [engine.webhookUrl, signBody(engine.secret, body)]
+      : [engine.triggerUrl, {}];
   try {
-    const response = await fetch(n8n.webhookUrl, {
+    const response = await fetch(url, {
       method: "POST",
-      headers: {
-        "content-type": "application/json",
-        ...signBody(n8n.secret, body),
-      },
+      headers: { "content-type": "application/json", ...auth },
       body,
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
@@ -29,7 +34,7 @@ export async function sendDispatchEvent(
       : {
           ok: false,
           httpStatus: response.status,
-          error: `n8n answered HTTP ${response.status}`,
+          error: `${workflowEngineLabels[engine.kind]} answered HTTP ${response.status}`,
         };
   } catch (error) {
     const cause = (error as { cause?: { message?: string } }).cause?.message;

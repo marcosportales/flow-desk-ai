@@ -66,7 +66,7 @@ src/
   infra/
     db/                   Drizzle schema, client, migrations
     classifier/           Classifier interface, OpenAI-compatible impl, fake impl
-    n8n/                  signed event client
+    workflowEngine/       Workflow Engine selection and event client (n8n signed, Power Automate)
     crypto/               HMAC sign/verify
   worker/                 job loop and handlers
 services/notifier/        simulated notification service
@@ -221,6 +221,7 @@ Partial unique index: at most one non-terminal Dispatch per Ticket: `unique (tic
 | dispatch_id | uuid fk not null | |
 | attempt_no | int not null | unique `(dispatch_id, attempt_no)` |
 | trigger | enum(`auto`,`manual`,`reconcile`) | |
+| workflow_engine | enum(`n8n`,`power_automate`) null | the Workflow Engine that ran the attempt (ADR 0011); null on a `reconcile` attempt |
 | outcome | enum(`sent`,`succeeded`,`failed`,`unknown`) | |
 | http_status | int null | |
 | execution_reference | text null | the Execution Reference, from callback (`n8n_execution_id` before Release 3); the callback settles the in-flight (latest) attempt's `outcome`, `error`, `finished_at`. Earlier attempts are never touched |
@@ -355,6 +356,7 @@ Auth: `X-API-Key` (static, from env) for external callers. The UI uses Server Ac
 | POST | `/api/tickets/:id/status` | `{ status }` |
 | POST | `/api/dispatches/:id/retry` | Manual retry (409 unless `failed`) |
 | POST | `/api/webhooks/n8n` | n8n callback (HMAC, no API key) |
+| POST | `/api/webhooks/power-automate` | Power Automate callback (bearer secret, no API key; ADR 0011) |
 | GET | `/api/requesters` | Seeded requesters |
 | GET | `/api/health` | DB connectivity |
 

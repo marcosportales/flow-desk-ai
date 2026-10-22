@@ -179,6 +179,7 @@ describe("getTicketDetail", () => {
         dispatchId: d2!.id,
         attemptNo: 1,
         trigger: "manual",
+        workflowEngine: "power_automate",
         outcome: "sent",
         httpStatus: 202,
         executionReference: "exec-9",
@@ -192,7 +193,10 @@ describe("getTicketDetail", () => {
     expect(d.classificationAttempts[0]!.rawOutput).toBe("not json");
     expect(d.dispatches.map((x) => x.sequence)).toEqual([1, 2]);
     expect(d.dispatches[0]!.attempts.map((a) => a.attemptNo)).toEqual([1, 2]);
-    expect(d.dispatches[1]!.attempts[0]!.executionReference).toBe("exec-9");
+    expect(d.dispatches[1]!.attempts[0]).toMatchObject({
+      workflowEngine: "power_automate",
+      executionReference: "exec-9",
+    });
     expect(d.events.map((e) => e.type)).toEqual([
       "ticket_created",
       "classified",

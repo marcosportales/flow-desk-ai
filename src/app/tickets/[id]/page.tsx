@@ -5,6 +5,7 @@ import { ArrowLeftIcon, InfoIcon } from "lucide-react";
 import { z } from "zod";
 import { canCloseOrReopen, canRunManualActions } from "@/domain/permissions";
 import { formatTicketNumber } from "@/domain/ticketNumber";
+import { workflowEngineLabels } from "@/domain/workflowEngine";
 import { requireUser } from "@/infra/auth/session";
 import { getDb } from "@/infra/db/client";
 import { getUserTeams } from "@/services/getUserTeams";
@@ -326,6 +327,7 @@ export default async function TicketDetailPage({
                       {[
                         "Attempt",
                         "Trigger",
+                        "Engine",
                         "Outcome",
                         "HTTP",
                         "Execution Reference",
@@ -343,6 +345,11 @@ export default async function TicketDetailPage({
                           #{a.attemptNo}
                         </TableCell>
                         <TableCell>{a.trigger}</TableCell>
+                        <TableCell>
+                          {a.workflowEngine
+                            ? workflowEngineLabels[a.workflowEngine]
+                            : "—"}
+                        </TableCell>
                         <TableCell>
                           <StatusBadge value={a.outcome} />
                         </TableCell>

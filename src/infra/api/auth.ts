@@ -41,6 +41,20 @@ export function rejectUnlessSigned(
   );
 }
 
+// Returns a 401 response unless the request carries `Authorization: Bearer
+// <secret>` with the secret in env var `secretName`, else null. With the
+// secret unset every request is refused: the route stays active on an n8n
+// deployment, where Power Automate's secret need not exist.
+export function rejectUnlessBearer(
+  request: Request,
+  secretName: string,
+): Response | null {
+  const secret = process.env[secretName];
+  const given = request.headers.get("authorization")?.match(/^Bearer (.+)$/);
+  if (secret && given && safeEqual(given[1]!, secret)) return null;
+  return errorResponse(401, "unauthorized", "Missing or invalid bearer token");
+}
+
 function safeEqual(a: string, b: string) {
   const left = Buffer.from(a);
   const right = Buffer.from(b);
