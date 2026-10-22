@@ -116,6 +116,7 @@ All settings live in `.env` (copy [.env.example](.env.example); it holds placeho
 | `FLOWDESK_TO_N8N_SECRET`, `N8N_TO_FLOWDESK_SECRET` | HMAC secrets for each direction |
 | `NOTIFIER_URL` | Notifier base URL (Reconciliation) |
 | `DISPATCH_CALLBACK_TIMEOUT_SECONDS` | Wait for n8n's callback before a Dispatch becomes `unknown` |
+| `TUNNEL_METRICS_HOST_PORT` | Loopback port of the tunnel's metrics, read by `pnpm tunnel:url` (default `2000`) |
 
 Change the `change-me` values before exposing the stack anywhere.
 
@@ -164,6 +165,20 @@ curl -X POST localhost:4000/admin/mode -H 'content-type: application/json' -d '{
 - `POST /admin/mode`: the same modes as the notifier, on `localhost:4100`.
 
 To use a real ERP, only the workflow's `Create ERP incident` node changes: call the ERP's API (for SAP, an OData service) with the `dispatch_id` as its idempotency key, and return its record id as `external_reference`. Reconciliation then needs that system's lookup by the same key in `src/infra/erp/client.ts`.
+
+## Public tunnel (optional, for a cloud Workflow Engine)
+
+Power Automate runs in the cloud and cannot reach the compose network (ADR 0011). The `power-automate` profile adds a [Caddy](docker/tunnel/Caddyfile) proxy behind a `cloudflared` quick tunnel (no Cloudflare account):
+
+```sh
+docker compose --profile power-automate up -d
+pnpm tunnel:url               # writes FLOWDESK_CALLBACK_URL=https://<random>.trycloudflare.com/callback to .env
+docker compose up -d worker   # picks up the new value
+```
+
+Only the routes the flow calls answer through the public URL: `POST /callback` (the Power Automate callback, `/api/webhooks/power-automate`), `GET /notifier/deliveries/<id>`, `POST /notifier/deliveries` and `POST /erp/incidents`. The web UI, the API, n8n, Postgres and the notifier and ERP admin endpoints stay private. The flow derives the notifier and ERP URLs from the origin of `callback_url` in each event, so a new tunnel URL needs no change to the flow. A quick tunnel gets a new URL on every restart: run `pnpm tunnel:url` again. Without the profile, `docker compose up` is unchanged.
+
+`FLOWDESK_CALLBACK_URL` is also where n8n calls back, so only run `pnpm tunnel:url` when the stack dispatches to Power Automate; to go back to n8n, restore `FLOWDESK_CALLBACK_URL=http://app:3000/api/webhooks/n8n`.
 
 ## n8n workflows
 
