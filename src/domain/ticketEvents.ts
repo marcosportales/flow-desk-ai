@@ -7,6 +7,7 @@ import {
 import { priorities, priorityRuleNames } from "./priority";
 import { routes, teams } from "./routing";
 import { dispatchStatuses, ticketStatuses } from "./transitions";
+import { workflowEngines } from "./workflowEngine";
 
 // Ticket Events and the `data` each type carries: docs/plan/IMPLEMENTATION.md
 // §3. The `ticket_events` columns take their types from here, so an event of
@@ -86,6 +87,8 @@ export const TicketEvent = z.discriminatedUnion("type", [
     z.strictObject({
       dispatchId: z.uuid(),
       attemptNo: z.int(),
+      // Absent on events written before there was a choice of engine (n8n).
+      workflowEngine: z.enum(workflowEngines).optional(),
       outcome: z.enum(["sent", "failed"]),
       httpStatus: z.int().nullable(),
       error: z.string().nullable(),

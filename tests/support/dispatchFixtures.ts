@@ -13,7 +13,7 @@ import {
 import { classifyTicket } from "@/services/classifyTicket";
 import { integrationActor } from "@/domain/actor";
 import { createTicket } from "@/services/createTicket";
-import type { DispatchConfig } from "@/infra/n8n/config";
+import type { DispatchConfig } from "@/infra/workflowEngine/config";
 import { dispatchTicket } from "@/services/dispatchTicket";
 import {
   type ReconcileConfig,
@@ -36,11 +36,22 @@ export const ACCESS_REQUEST = {
   description: "Please give me access to the Jira project for my new role.",
 };
 
+export const FROM_POWER_AUTOMATE_SECRET = "power-automate-to-flowdesk";
+
 export function dispatchConfig(webhookUrl: string): DispatchConfig {
   return {
-    webhookUrl,
-    secret: TO_N8N_SECRET,
+    engine: { kind: "n8n", webhookUrl, secret: TO_N8N_SECRET },
     callbackUrl: "http://app:3000/api/webhooks/n8n",
+    callbackTimeoutSeconds: 60,
+  };
+}
+
+export function powerAutomateDispatchConfig(
+  triggerUrl: string,
+): DispatchConfig {
+  return {
+    engine: { kind: "power_automate", triggerUrl },
+    callbackUrl: "http://app:3000/api/webhooks/power-automate",
     callbackTimeoutSeconds: 60,
   };
 }
@@ -82,13 +93,19 @@ export function dispatchFixtures(db: TestDb, sql: Sql) {
     return result.ticket;
   }
 
-  // Runs the Ticket's next dispatch job through the real worker loop.
-  const runDispatch = (ticketId: string, webhookUrl: string) =>
+  // Runs the Ticket's next dispatch job through the real worker loop; a bare
+  // URL is an n8n webhook.
+  const runDispatch = (ticketId: string, target: string | DispatchConfig) =>
     runNextJob({
       sql,
       workerId: `test-${randomUUID()}`,
       handlers: {
-        dispatch: (job) => dispatchTicket(db, dispatchConfig(webhookUrl), job),
+        dispatch: (job) =>
+          dispatchTicket(
+            db,
+            typeof target === "string" ? dispatchConfig(target) : target,
+            job,
+          ),
       },
       backoffMs: () => 0,
       ticketIds: [ticketId],

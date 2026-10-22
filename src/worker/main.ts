@@ -3,7 +3,7 @@ import { writeFile } from "node:fs/promises";
 import { classifierFromEnv } from "@/infra/classifier";
 import { getDb, getSql } from "@/infra/db/client";
 import { erpConfigFromEnv } from "@/infra/erp/client";
-import { dispatchConfigFromEnv } from "@/infra/n8n/config";
+import { dispatchConfigFromEnv } from "@/infra/workflowEngine/config";
 import { notifierConfigFromEnv } from "@/infra/notifier/client";
 import { classifyTicket } from "@/services/classifyTicket";
 import { dispatchTicket } from "@/services/dispatchTicket";
@@ -21,7 +21,8 @@ const TICK_MS = 10_000;
 // Touched every loop; the compose healthcheck reads its mtime.
 const HEARTBEAT_FILE = "/tmp/worker-heartbeat";
 
-// Fail at start-up on a bad CLASSIFIER / LLM_* / n8n / target configuration.
+// Fail at start-up on a bad CLASSIFIER / LLM_* / Workflow Engine / target
+// configuration.
 const classifier = classifierFromEnv(process.env);
 const dispatchConfig = dispatchConfigFromEnv(process.env);
 const reconcileConfig = {

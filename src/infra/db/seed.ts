@@ -515,6 +515,7 @@ async function seedTicket(
         dispatchId,
         attemptNo,
         trigger: "auto",
+        workflowEngine: "n8n",
         ...(succeeded
           ? {
               outcome: "succeeded",
@@ -535,6 +536,7 @@ async function seedTicket(
         data: {
           dispatchId,
           attemptNo,
+          workflowEngine: "n8n",
           ...(succeeded
             ? { outcome: "sent", httpStatus: 202, error: null }
             : {

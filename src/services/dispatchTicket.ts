@@ -1,15 +1,16 @@
 import { eq, max, sql } from "drizzle-orm";
 import { systemActor } from "@/domain/actor";
 import { formatTicketNumber } from "@/domain/ticketNumber";
+import { workflowEngineLabels } from "@/domain/workflowEngine";
 import { dispatchAttempts, dispatches, tickets } from "@/infra/db/schema";
-import type { DispatchConfig } from "@/infra/n8n/config";
-import { sendDispatchEvent } from "@/infra/n8n/client";
+import type { DispatchConfig } from "@/infra/workflowEngine/config";
+import { sendDispatchEvent } from "@/infra/workflowEngine/client";
 import type { Db } from "./createTicket";
 import { appendTicketEvent, moveDispatchStatus } from "./ticketWrites";
 
-// Dispatch handler: docs/plan/IMPLEMENTATION.md §4.4, ADR 0005, ADR 0006.
-// The app has already decided Category, Priority, Team and Route; n8n only
-// executes and reports back on the callback webhook.
+// Dispatch handler: docs/plan/IMPLEMENTATION.md §4.4, ADR 0005, ADR 0006,
+// ADR 0011. The app has already decided Category, Priority, Team and Route;
+// the Workflow Engine only executes and reports back on its callback webhook.
 
 export const MAX_AUTO_ATTEMPTS = 3;
 
@@ -23,8 +24,8 @@ export async function dispatchTicket(
   if (!job.dispatchId) throw new Error("dispatch job without a dispatch_id");
   const dispatchId = job.dispatchId;
 
-  // The row lock is held across the POST: n8n answers 202 and may call back
-  // before this commits, and the callback's own lock then waits for `sent`
+  // The row lock is held across the POST: the engine answers 202 and may call
+  // back before this commits, and the callback's own lock then waits for `sent`
   // instead of finding the Dispatch still `pending`. It also stops a second
   // worker (after a reclaimed lease) from sending the same Dispatch twice.
   const leaveJobToRetry = await db.transaction(async (tx) => {
@@ -58,8 +59,11 @@ export async function dispatchTicket(
       route: dispatch.route,
       callback_url: config.callbackUrl,
     });
+    // Every attempt, retries included, goes to the engine configured now.
+    const workflowEngine = config.engine.kind;
+    const engineLabel = workflowEngineLabels[workflowEngine];
     const startedAt = new Date();
-    const result = await sendDispatchEvent(config, body);
+    const result = await sendDispatchEvent(config.engine, body);
     const outcome = result.ok ? "sent" : "failed";
     const failure = {
       httpStatus: result.httpStatus,
@@ -77,6 +81,7 @@ export async function dispatchTicket(
       dispatchId: dispatch.id,
       attemptNo,
       trigger: manual ? "manual" : "auto",
+      workflowEngine,
       outcome,
       ...failure,
       startedAt,
@@ -87,6 +92,7 @@ export async function dispatchTicket(
       data: {
         dispatchId: dispatch.id,
         attemptNo,
+        workflowEngine,
         outcome,
         ...failure,
       },
@@ -118,8 +124,8 @@ export async function dispatchTicket(
         data: {
           dispatchId: dispatch.id,
           reason: manual
-            ? `n8n did not accept the manual retry: ${result.error}`
-            : `n8n did not accept the Dispatch after ${autoAttempts} attempts: ${result.error}`,
+            ? `${engineLabel} did not accept the manual retry: ${result.error}`
+            : `${engineLabel} did not accept the Dispatch after ${autoAttempts} attempts: ${result.error}`,
         },
       },
     });
@@ -129,5 +135,7 @@ export async function dispatchTicket(
   // Committed above; the throw only makes the worker re-run the job with
   // backoff while the automatic budget lasts.
   if (leaveJobToRetry)
-    throw new Error(`Dispatch ${dispatchId} not accepted by n8n`);
+    throw new Error(
+      `Dispatch ${dispatchId} not accepted by the Workflow Engine`,
+    );
 }

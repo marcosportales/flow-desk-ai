@@ -25,6 +25,7 @@ import {
 import { notificationKinds } from "../../domain/notifications";
 import { priorities } from "../../domain/priority";
 import { routes, teams } from "../../domain/routing";
+import { workflowEngines } from "../../domain/workflowEngine";
 import type {
   TicketEvent,
   TicketEventData,
@@ -67,6 +68,7 @@ export const dispatchTrigger = pgEnum("dispatch_trigger", [
   "manual",
   "reconcile",
 ]);
+export const workflowEngine = pgEnum("workflow_engine", workflowEngines);
 export const dispatchAttemptOutcome = pgEnum("dispatch_attempt_outcome", [
   "sent",
   "succeeded",
@@ -322,6 +324,9 @@ export const dispatchAttempts = pgTable(
       .references(() => dispatches.id),
     attemptNo: integer("attempt_no").notNull(),
     trigger: dispatchTrigger("trigger").notNull(),
+    // The engine that ran the attempt; null on a Reconciliation, which asks
+    // the target, not an engine.
+    workflowEngine: workflowEngine("workflow_engine"),
     outcome: dispatchAttemptOutcome("outcome").notNull(),
     httpStatus: integer("http_status"),
     executionReference: text("execution_reference"),
