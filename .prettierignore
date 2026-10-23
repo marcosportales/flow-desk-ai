@@ -1,6 +1,7 @@
 pnpm-lock.yaml
 src/infra/db/migrations/
 n8n/workflows/
+power-automate/
 .next/
 *.md
 .agents/

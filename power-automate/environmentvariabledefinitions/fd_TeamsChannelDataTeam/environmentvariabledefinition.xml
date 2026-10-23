@@ -1,0 +1,13 @@
+<environmentvariabledefinition schemaname="fd_TeamsChannelDataTeam">
+  <description default="Id of the Teams channel for the data_team Team.">
+    <label description="Id of the Teams channel for the data_team Team." languagecode="1033" />
+  </description>
+  <displayname default="Data Team channel">
+    <label description="Data Team channel" languagecode="1033" />
+  </displayname>
+  <introducedversion>1.0.0.0</introducedversion>
+  <iscustomizable>1</iscustomizable>
+  <isrequired>1</isrequired>
+  <secretstore>0</secretstore>
+  <type>100000000</type>
+</environmentvariabledefinition>

@@ -1,0 +1,13 @@
+<environmentvariabledefinition schemaname="fd_UrgentMailbox">
+  <description default="Mailbox emailed on the Urgent Route, with the Team in the subject.">
+    <label description="Mailbox emailed on the Urgent Route, with the Team in the subject." languagecode="1033" />
+  </description>
+  <displayname default="Urgent mailbox">
+    <label description="Urgent mailbox" languagecode="1033" />
+  </displayname>
+  <introducedversion>1.0.0.0</introducedversion>
+  <iscustomizable>1</iscustomizable>
+  <isrequired>1</isrequired>
+  <secretstore>0</secretstore>
+  <type>100000000</type>
+</environmentvariabledefinition>

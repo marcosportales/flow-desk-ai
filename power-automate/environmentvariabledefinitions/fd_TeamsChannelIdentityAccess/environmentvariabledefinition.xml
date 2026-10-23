@@ -1,0 +1,13 @@
+<environmentvariabledefinition schemaname="fd_TeamsChannelIdentityAccess">
+  <description default="Id of the Teams channel for the identity_access Team.">
+    <label description="Id of the Teams channel for the identity_access Team." languagecode="1033" />
+  </description>
+  <displayname default="Identity and Access channel">
+    <label description="Identity and Access channel" languagecode="1033" />
+  </displayname>
+  <introducedversion>1.0.0.0</introducedversion>
+  <iscustomizable>1</iscustomizable>
+  <isrequired>1</isrequired>
+  <secretstore>0</secretstore>
+  <type>100000000</type>
+</environmentvariabledefinition>
