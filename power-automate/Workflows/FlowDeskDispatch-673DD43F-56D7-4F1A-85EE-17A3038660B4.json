@@ -1,0 +1,579 @@
+{
+  "properties": {
+    "connectionReferences": {
+      "shared_teams": {
+        "runtimeSource": "embedded",
+        "connection": {
+          "connectionReferenceLogicalName": "fd_FlowDeskTeams"
+        },
+        "api": {
+          "name": "shared_teams"
+        }
+      },
+      "shared_office365": {
+        "runtimeSource": "embedded",
+        "connection": {
+          "connectionReferenceLogicalName": "fd_FlowDeskOutlook"
+        },
+        "api": {
+          "name": "shared_office365"
+        }
+      }
+    },
+    "definition": {
+      "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+      "contentVersion": "1.0.0.0",
+      "parameters": {
+        "$connections": {
+          "defaultValue": {},
+          "type": "Object"
+        },
+        "$authentication": {
+          "defaultValue": {},
+          "type": "SecureObject"
+        },
+        "FlowDesk callback secret (fd_CallbackSecret)": {
+          "defaultValue": "",
+          "type": "String",
+          "metadata": {
+            "schemaName": "fd_CallbackSecret"
+          }
+        },
+        "FlowDesk Teams team (fd_TeamsTeamId)": {
+          "defaultValue": "",
+          "type": "String",
+          "metadata": {
+            "schemaName": "fd_TeamsTeamId"
+          }
+        },
+        "IT Systems channel (fd_TeamsChannelItSystems)": {
+          "defaultValue": "",
+          "type": "String",
+          "metadata": {
+            "schemaName": "fd_TeamsChannelItSystems"
+          }
+        },
+        "Identity and Access channel (fd_TeamsChannelIdentityAccess)": {
+          "defaultValue": "",
+          "type": "String",
+          "metadata": {
+            "schemaName": "fd_TeamsChannelIdentityAccess"
+          }
+        },
+        "Data Team channel (fd_TeamsChannelDataTeam)": {
+          "defaultValue": "",
+          "type": "String",
+          "metadata": {
+            "schemaName": "fd_TeamsChannelDataTeam"
+          }
+        },
+        "Service Desk channel (fd_TeamsChannelServiceDesk)": {
+          "defaultValue": "",
+          "type": "String",
+          "metadata": {
+            "schemaName": "fd_TeamsChannelServiceDesk"
+          }
+        },
+        "Urgent mailbox (fd_UrgentMailbox)": {
+          "defaultValue": "",
+          "type": "String",
+          "metadata": {
+            "schemaName": "fd_UrgentMailbox"
+          }
+        }
+      },
+      "triggers": {
+        "When_a_Dispatch_event_is_received": {
+          "type": "Request",
+          "kind": "Http",
+          "description": "Authenticated by the trigger URL's sig alone: Power Automate cannot verify FlowDesk's HMAC headers (ADR 0011).",
+          "operationOptions": "EnableSchemaValidation",
+          "inputs": {
+            "triggerAuthenticationType": "All",
+            "method": "POST",
+            "schema": {
+              "type": "object",
+              "required": [
+                "dispatch_id",
+                "ticket",
+                "category",
+                "priority",
+                "team",
+                "route",
+                "callback_url"
+              ],
+              "properties": {
+                "dispatch_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "ticket": {
+                  "type": "object",
+                  "required": ["id", "number", "title"],
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "number": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "summary": {
+                      "type": ["string", "null"]
+                    }
+                  }
+                },
+                "category": {
+                  "type": "string",
+                  "enum": ["erp", "access", "data"]
+                },
+                "priority": {
+                  "type": "string",
+                  "enum": ["low", "normal", "high", "urgent"]
+                },
+                "team": {
+                  "type": "string",
+                  "enum": [
+                    "it_systems",
+                    "identity_access",
+                    "data_team",
+                    "service_desk"
+                  ]
+                },
+                "route": {
+                  "type": "string",
+                  "enum": ["standard", "urgent"]
+                },
+                "callback_url": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          }
+        }
+      },
+      "actions": {
+        "Initialize_variables": {
+          "type": "InitializeVariable",
+          "description": "What the callback reports. An empty error means succeeded.",
+          "inputs": {
+            "variables": [
+              {
+                "name": "error",
+                "type": "string",
+                "value": ""
+              },
+              {
+                "name": "deliveredAt",
+                "type": "string",
+                "value": ""
+              },
+              {
+                "name": "externalReference",
+                "type": "string",
+                "value": ""
+              }
+            ]
+          },
+          "runAfter": {}
+        },
+        "Try": {
+          "type": "Scope",
+          "description": "The app has already decided Category, Priority, Team and Route; this only carries them out, once (ADR 0005, ADR 0006).",
+          "actions": {
+            "Public_origin": {
+              "type": "Compose",
+              "description": "The tunnel's public origin, taken from callback_url so a new tunnel URL needs no change here (spec T14).",
+              "inputs": "@first(split(triggerBody()?['callback_url'], uriPath(triggerBody()?['callback_url'])))",
+              "runAfter": {}
+            },
+            "ERP_Category": {
+              "type": "If",
+              "expression": {
+                "and": [
+                  {
+                    "equals": ["@triggerBody()?['category']", "erp"]
+                  }
+                ]
+              },
+              "actions": {
+                "Create_ERP_incident": {
+                  "type": "Http",
+                  "inputs": {
+                    "method": "POST",
+                    "uri": "@{outputs('Public_origin')}/erp/incidents",
+                    "headers": {
+                      "Content-Type": "application/json",
+                      "Idempotency-Key": "@triggerBody()?['dispatch_id']"
+                    },
+                    "body": {
+                      "ticket_number": "@triggerBody()?['ticket']?['number']",
+                      "title": "@triggerBody()?['ticket']?['title']",
+                      "summary": "@triggerBody()?['ticket']?['summary']",
+                      "priority": "@triggerBody()?['priority']"
+                    },
+                    "retryPolicy": {
+                      "type": "none"
+                    }
+                  },
+                  "runAfter": {}
+                },
+                "Set_External_Reference": {
+                  "type": "SetVariable",
+                  "description": "The incident's reference, stored on the Ticket (ADR 0009).",
+                  "inputs": {
+                    "name": "externalReference",
+                    "value": "@body('Create_ERP_incident')?['reference']"
+                  },
+                  "runAfter": {
+                    "Create_ERP_incident": ["Succeeded"]
+                  }
+                },
+                "Set_incident_created_at": {
+                  "type": "SetVariable",
+                  "inputs": {
+                    "name": "deliveredAt",
+                    "value": "@body('Create_ERP_incident')?['created_at']"
+                  },
+                  "runAfter": {
+                    "Set_External_Reference": ["Succeeded"]
+                  }
+                }
+              },
+              "else": {
+                "actions": {
+                  "Look_up_delivery": {
+                    "type": "Http",
+                    "description": "Teams cannot say whether it already got this dispatch_id, so the notifier keeps that record (ADR 0011).",
+                    "inputs": {
+                      "method": "GET",
+                      "uri": "@{outputs('Public_origin')}/notifier/deliveries/@{encodeUriComponent(triggerBody()?['dispatch_id'])}",
+                      "retryPolicy": {
+                        "type": "none"
+                      }
+                    },
+                    "runAfter": {}
+                  },
+                  "Delivered_before": {
+                    "type": "Switch",
+                    "description": "No answer at all counts as 0, an unexpected answer.",
+                    "expression": "@coalesce(outputs('Look_up_delivery')?['statusCode'], 0)",
+                    "cases": {
+                      "Already_delivered": {
+                        "case": 200,
+                        "actions": {
+                          "Set_earlier_received_at": {
+                            "type": "SetVariable",
+                            "inputs": {
+                              "name": "deliveredAt",
+                              "value": "@body('Look_up_delivery')?['received_at']"
+                            },
+                            "runAfter": {}
+                          }
+                        }
+                      },
+                      "Not_delivered": {
+                        "case": 404,
+                        "actions": {
+                          "Message": {
+                            "type": "Compose",
+                            "inputs": "@{if(equals(triggerBody()?['route'], 'urgent'), '[URGENT] ', '')}@{triggerBody()?['ticket']?['number']} @{triggerBody()?['ticket']?['title']}: @{triggerBody()?['ticket']?['summary']} (priority @{triggerBody()?['priority']})",
+                            "runAfter": {}
+                          },
+                          "Teams_message": {
+                            "type": "Compose",
+                            "description": "Teams and Outlook read the message as HTML.",
+                            "inputs": "<p>@{replace(replace(replace(outputs('Message'), '&', '&amp;'), '<', '&lt;'), '>', '&gt;')}</p>",
+                            "runAfter": {
+                              "Message": ["Succeeded"]
+                            }
+                          },
+                          "Post_to_the_Team_channel": {
+                            "type": "Switch",
+                            "expression": "@triggerBody()?['team']",
+                            "cases": {
+                              "IT_Systems": {
+                                "case": "it_systems",
+                                "actions": {
+                                  "Post_to_IT_Systems": {
+                                    "type": "OpenApiConnection",
+                                    "inputs": {
+                                      "host": {
+                                        "connectionName": "shared_teams",
+                                        "operationId": "PostMessageToConversation",
+                                        "apiId": "/providers/Microsoft.PowerApps/apis/shared_teams"
+                                      },
+                                      "parameters": {
+                                        "poster": "Flow bot",
+                                        "location": "Channel",
+                                        "body/recipient/groupId": "@parameters('FlowDesk Teams team (fd_TeamsTeamId)')",
+                                        "body/recipient/channelId": "@parameters('IT Systems channel (fd_TeamsChannelItSystems)')",
+                                        "body/messageBody": "@outputs('Teams_message')"
+                                      },
+                                      "authentication": "@parameters('$authentication')",
+                                      "retryPolicy": {
+                                        "type": "none"
+                                      }
+                                    },
+                                    "runAfter": {}
+                                  }
+                                }
+                              },
+                              "Identity_and_Access": {
+                                "case": "identity_access",
+                                "actions": {
+                                  "Post_to_Identity_and_Access": {
+                                    "type": "OpenApiConnection",
+                                    "inputs": {
+                                      "host": {
+                                        "connectionName": "shared_teams",
+                                        "operationId": "PostMessageToConversation",
+                                        "apiId": "/providers/Microsoft.PowerApps/apis/shared_teams"
+                                      },
+                                      "parameters": {
+                                        "poster": "Flow bot",
+                                        "location": "Channel",
+                                        "body/recipient/groupId": "@parameters('FlowDesk Teams team (fd_TeamsTeamId)')",
+                                        "body/recipient/channelId": "@parameters('Identity and Access channel (fd_TeamsChannelIdentityAccess)')",
+                                        "body/messageBody": "@outputs('Teams_message')"
+                                      },
+                                      "authentication": "@parameters('$authentication')",
+                                      "retryPolicy": {
+                                        "type": "none"
+                                      }
+                                    },
+                                    "runAfter": {}
+                                  }
+                                }
+                              },
+                              "Data_Team": {
+                                "case": "data_team",
+                                "actions": {
+                                  "Post_to_Data_Team": {
+                                    "type": "OpenApiConnection",
+                                    "inputs": {
+                                      "host": {
+                                        "connectionName": "shared_teams",
+                                        "operationId": "PostMessageToConversation",
+                                        "apiId": "/providers/Microsoft.PowerApps/apis/shared_teams"
+                                      },
+                                      "parameters": {
+                                        "poster": "Flow bot",
+                                        "location": "Channel",
+                                        "body/recipient/groupId": "@parameters('FlowDesk Teams team (fd_TeamsTeamId)')",
+                                        "body/recipient/channelId": "@parameters('Data Team channel (fd_TeamsChannelDataTeam)')",
+                                        "body/messageBody": "@outputs('Teams_message')"
+                                      },
+                                      "authentication": "@parameters('$authentication')",
+                                      "retryPolicy": {
+                                        "type": "none"
+                                      }
+                                    },
+                                    "runAfter": {}
+                                  }
+                                }
+                              },
+                              "Service_Desk": {
+                                "case": "service_desk",
+                                "actions": {
+                                  "Post_to_Service_Desk": {
+                                    "type": "OpenApiConnection",
+                                    "inputs": {
+                                      "host": {
+                                        "connectionName": "shared_teams",
+                                        "operationId": "PostMessageToConversation",
+                                        "apiId": "/providers/Microsoft.PowerApps/apis/shared_teams"
+                                      },
+                                      "parameters": {
+                                        "poster": "Flow bot",
+                                        "location": "Channel",
+                                        "body/recipient/groupId": "@parameters('FlowDesk Teams team (fd_TeamsTeamId)')",
+                                        "body/recipient/channelId": "@parameters('Service Desk channel (fd_TeamsChannelServiceDesk)')",
+                                        "body/messageBody": "@outputs('Teams_message')"
+                                      },
+                                      "authentication": "@parameters('$authentication')",
+                                      "retryPolicy": {
+                                        "type": "none"
+                                      }
+                                    },
+                                    "runAfter": {}
+                                  }
+                                }
+                              }
+                            },
+                            "default": {
+                              "actions": {}
+                            },
+                            "runAfter": {
+                              "Teams_message": ["Succeeded"]
+                            }
+                          },
+                          "Urgent_Route": {
+                            "type": "If",
+                            "expression": {
+                              "and": [
+                                {
+                                  "equals": ["@triggerBody()?['route']", "urgent"]
+                                }
+                              ]
+                            },
+                            "actions": {
+                              "Email_the_urgent_mailbox": {
+                                "type": "OpenApiConnection",
+                                "inputs": {
+                                  "host": {
+                                    "connectionName": "shared_office365",
+                                    "operationId": "SendEmailV2",
+                                    "apiId": "/providers/Microsoft.PowerApps/apis/shared_office365"
+                                  },
+                                  "parameters": {
+                                    "emailMessage/To": "@parameters('Urgent mailbox (fd_UrgentMailbox)')",
+                                    "emailMessage/Subject": "[URGENT] @{triggerBody()?['team']}: @{triggerBody()?['ticket']?['number']} @{triggerBody()?['ticket']?['title']}",
+                                    "emailMessage/Body": "@outputs('Teams_message')",
+                                    "emailMessage/Importance": "High"
+                                  },
+                                  "authentication": "@parameters('$authentication')",
+                                  "retryPolicy": {
+                                    "type": "none"
+                                  }
+                                },
+                                "runAfter": {}
+                              }
+                            },
+                            "else": {
+                              "actions": {}
+                            },
+                            "runAfter": {
+                              "Post_to_the_Team_channel": ["Succeeded"]
+                            }
+                          },
+                          "Record_delivery": {
+                            "type": "Http",
+                            "description": "After the post: a crash between the two can repeat one Teams message on retry, never lose it (ADR 0011).",
+                            "inputs": {
+                              "method": "POST",
+                              "uri": "@{outputs('Public_origin')}/notifier/deliveries",
+                              "headers": {
+                                "Content-Type": "application/json",
+                                "Idempotency-Key": "@triggerBody()?['dispatch_id']"
+                              },
+                              "body": {
+                                "channel": "teams:@{triggerBody()?['team']}",
+                                "message": "@outputs('Message')"
+                              },
+                              "retryPolicy": {
+                                "type": "none"
+                              }
+                            },
+                            "runAfter": {
+                              "Urgent_Route": ["Succeeded"]
+                            }
+                          },
+                          "Set_received_at": {
+                            "type": "SetVariable",
+                            "inputs": {
+                              "name": "deliveredAt",
+                              "value": "@body('Record_delivery')?['received_at']"
+                            },
+                            "runAfter": {
+                              "Record_delivery": ["Succeeded"]
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "default": {
+                      "actions": {
+                        "Set_unexpected_answer": {
+                          "type": "SetVariable",
+                          "description": "Neither delivered nor missing: posting now could repeat a message, so report the failure and let the app reconcile.",
+                          "inputs": {
+                            "name": "error",
+                            "value": "notifier lookup answered @{if(equals(outputs('Look_up_delivery')?['statusCode'], null), 'nothing', concat('HTTP ', string(outputs('Look_up_delivery')?['statusCode'])))}"
+                          },
+                          "runAfter": {}
+                        }
+                      }
+                    },
+                    "runAfter": {
+                      "Look_up_delivery": ["Succeeded", "Failed"]
+                    }
+                  }
+                }
+              },
+              "runAfter": {
+                "Public_origin": ["Succeeded"]
+              }
+            }
+          },
+          "runAfter": {
+            "Initialize_variables": ["Succeeded"]
+          }
+        },
+        "Catch": {
+          "type": "Scope",
+          "actions": {
+            "Failed_steps": {
+              "type": "Query",
+              "inputs": {
+                "from": "@result('Try')",
+                "where": "@contains(createArray('Failed', 'TimedOut'), item()?['status'])"
+              },
+              "runAfter": {}
+            },
+            "Set_error": {
+              "type": "SetVariable",
+              "description": "The run history, found by the Execution Reference, has the failing step's full detail.",
+              "inputs": {
+                "name": "error",
+                "value": "@{coalesce(first(body('Failed_steps'))?['name'], 'Try')} failed: @{coalesce(first(body('Failed_steps'))?['error']?['message'], first(body('Failed_steps'))?['code'], 'see the run history')}"
+              },
+              "runAfter": {
+                "Failed_steps": ["Succeeded"]
+              }
+            }
+          },
+          "runAfter": {
+            "Try": ["Failed", "TimedOut"]
+          }
+        },
+        "Call_back_FlowDesk": {
+          "type": "Http",
+          "description": "Bearer secret instead of HMAC, on FlowDesk's Power Automate route (ADR 0011). Not retried: the app reconciles a lost callback (ADR 0006).",
+          "inputs": {
+            "method": "POST",
+            "uri": "@triggerBody()?['callback_url']",
+            "headers": {
+              "Content-Type": "application/json",
+              "Authorization": "Bearer @{parameters('FlowDesk callback secret (fd_CallbackSecret)')}"
+            },
+            "body": {
+              "dispatch_id": "@triggerBody()?['dispatch_id']",
+              "outcome": "@if(empty(variables('error')), 'succeeded', 'failed')",
+              "error": "@if(empty(variables('error')), null, variables('error'))",
+              "execution_reference": "@workflow()['run']['name']",
+              "delivered_at": "@if(or(not(empty(variables('error'))), empty(variables('deliveredAt'))), null, variables('deliveredAt'))",
+              "external_reference": "@if(or(not(empty(variables('error'))), empty(variables('externalReference'))), null, variables('externalReference'))"
+            },
+            "retryPolicy": {
+              "type": "none"
+            }
+          },
+          "runtimeConfiguration": {
+            "secureData": {
+              "properties": ["inputs"]
+            }
+          },
+          "runAfter": {
+            "Catch": ["Succeeded", "Skipped"]
+          }
+        }
+      }
+    },
+    "templateName": null
+  },
+  "schemaVersion": "1.0.0.0"
+}

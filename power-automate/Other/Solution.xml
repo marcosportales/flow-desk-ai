@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ImportExportXml version="9.2.24093.208" SolutionPackageVersion="9.2" languagecode="1033" generatedBy="CrmLive" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" OrganizationVersion="9.2.24093.208" OrganizationSchemaType="Standard" CRMServerServiceabilityVersion="9.2.24093.00208">
+  <SolutionManifest>
+    <UniqueName>FlowDeskDispatch</UniqueName>
+    <LocalizedNames>
+      <LocalizedName description="FlowDesk Dispatch" languagecode="1033" />
+    </LocalizedNames>
+    <Descriptions>
+      <Description description="Carries out FlowDesk Dispatches: Teams, Outlook and the simulated ERP (ADR 0011)." languagecode="1033" />
+    </Descriptions>
+    <Version>1.0.0.0</Version>
+    <Managed>0</Managed>
+    <Publisher>
+      <UniqueName>flowdesk</UniqueName>
+      <LocalizedNames>
+        <LocalizedName description="FlowDesk" languagecode="1033" />
+      </LocalizedNames>
+      <Descriptions />
+      <EMailAddress xsi:nil="true"></EMailAddress>
+      <SupportingWebsiteUrl xsi:nil="true"></SupportingWebsiteUrl>
+      <CustomizationPrefix>fd</CustomizationPrefix>
+      <CustomizationOptionValuePrefix>73520</CustomizationOptionValuePrefix>
+      <Addresses />
+    </Publisher>
+    <RootComponents>
+      <RootComponent type="29" id="{673dd43f-56d7-4f1a-85ee-17a3038660b4}" behavior="0" />
+      <RootComponent type="380" schemaName="fd_CallbackSecret" behavior="0" />
+      <RootComponent type="380" schemaName="fd_TeamsTeamId" behavior="0" />
+      <RootComponent type="380" schemaName="fd_TeamsChannelItSystems" behavior="0" />
+      <RootComponent type="380" schemaName="fd_TeamsChannelIdentityAccess" behavior="0" />
+      <RootComponent type="380" schemaName="fd_TeamsChannelDataTeam" behavior="0" />
+      <RootComponent type="380" schemaName="fd_TeamsChannelServiceDesk" behavior="0" />
+      <RootComponent type="380" schemaName="fd_UrgentMailbox" behavior="0" />
+    </RootComponents>
+    <MissingDependencies />
+  </SolutionManifest>
+</ImportExportXml>

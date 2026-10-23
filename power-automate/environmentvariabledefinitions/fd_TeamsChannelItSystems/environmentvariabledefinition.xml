@@ -1,0 +1,13 @@
+<environmentvariabledefinition schemaname="fd_TeamsChannelItSystems">
+  <description default="Id of the Teams channel for the it_systems Team.">
+    <label description="Id of the Teams channel for the it_systems Team." languagecode="1033" />
+  </description>
+  <displayname default="IT Systems channel">
+    <label description="IT Systems channel" languagecode="1033" />
+  </displayname>
+  <introducedversion>1.0.0.0</introducedversion>
+  <iscustomizable>1</iscustomizable>
+  <isrequired>1</isrequired>
+  <secretstore>0</secretstore>
+  <type>100000000</type>
+</environmentvariabledefinition>

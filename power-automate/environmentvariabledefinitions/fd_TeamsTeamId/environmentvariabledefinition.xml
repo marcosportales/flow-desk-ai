@@ -1,0 +1,13 @@
+<environmentvariabledefinition schemaname="fd_TeamsTeamId">
+  <description default="Id of the Microsoft Team holding one channel per FlowDesk Team.">
+    <label description="Id of the Microsoft Team holding one channel per FlowDesk Team." languagecode="1033" />
+  </description>
+  <displayname default="FlowDesk Teams team">
+    <label description="FlowDesk Teams team" languagecode="1033" />
+  </displayname>
+  <introducedversion>1.0.0.0</introducedversion>
+  <iscustomizable>1</iscustomizable>
+  <isrequired>1</isrequired>
+  <secretstore>0</secretstore>
+  <type>100000000</type>
+</environmentvariabledefinition>

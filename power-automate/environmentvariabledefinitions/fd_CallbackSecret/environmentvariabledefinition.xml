@@ -1,0 +1,13 @@
+<environmentvariabledefinition schemaname="fd_CallbackSecret">
+  <description default="Bearer secret for the callback to FlowDesk: the same value as POWER_AUTOMATE_TO_FLOWDESK_SECRET.">
+    <label description="Bearer secret for the callback to FlowDesk: the same value as POWER_AUTOMATE_TO_FLOWDESK_SECRET." languagecode="1033" />
+  </description>
+  <displayname default="FlowDesk callback secret">
+    <label description="FlowDesk callback secret" languagecode="1033" />
+  </displayname>
+  <introducedversion>1.0.0.0</introducedversion>
+  <iscustomizable>1</iscustomizable>
+  <isrequired>1</isrequired>
+  <secretstore>0</secretstore>
+  <type>100000000</type>
+</environmentvariabledefinition>
